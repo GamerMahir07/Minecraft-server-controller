@@ -62,6 +62,54 @@ THEMES = {
         "text": "#cdd6f4", "muted": "#45475a",
         "start": "#a6e3a1", "stop": "#f38ba8", "sync": "#89b4fa", "handoff": "#fab387",
     },
+    "Ender Night": {
+        "appearance": "dark",
+        "bg": "#000000", "card": "#0d0010", "border": "#3b0060",
+        "text": "#e8b4ff", "muted": "#6a2a8a",
+        "start": "#bf7fff", "stop": "#ff5f87", "sync": "#d68fff", "handoff": "#ffb347",
+    },
+    "Arctic": {
+        "appearance": "light",
+        "bg": "#eef4fb", "card": "#ffffff", "border": "#b8d4f0",
+        "text": "#0d2137", "muted": "#6a90b0",
+        "start": "#0ea5e9", "stop": "#e11d48", "sync": "#6366f1", "handoff": "#f59e0b",
+    },
+    "Forest": {
+        "appearance": "dark",
+        "bg": "#0d1a0d", "card": "#142414", "border": "#254025",
+        "text": "#d4edda", "muted": "#4a7a4a",
+        "start": "#86efac", "stop": "#fca5a5", "sync": "#6ee7b7", "handoff": "#fde68a",
+    },
+    "Rose Gold": {
+        "appearance": "light",
+        "bg": "#fff0f3", "card": "#ffffff", "border": "#f4c2cb",
+        "text": "#3a0a14", "muted": "#b06070",
+        "start": "#e11d48", "stop": "#9f1239", "sync": "#db2777", "handoff": "#c2410c",
+    },
+    "Dracula": {
+        "appearance": "dark",
+        "bg": "#282a36", "card": "#313442", "border": "#44475a",
+        "text": "#f8f8f2", "muted": "#6272a4",
+        "start": "#50fa7b", "stop": "#ff5555", "sync": "#8be9fd", "handoff": "#ffb86c",
+    },
+    "Lava": {
+        "appearance": "dark",
+        "bg": "#120500", "card": "#1e0a00", "border": "#5a1a00",
+        "text": "#ffe8d0", "muted": "#7a3a10",
+        "start": "#ff7c00", "stop": "#ff3300", "sync": "#ffaa00", "handoff": "#ffdd00",
+    },
+    "Sand": {
+        "appearance": "light",
+        "bg": "#fdf6e3", "card": "#fffaf0", "border": "#e8d8b0",
+        "text": "#2c1a00", "muted": "#9a7a40",
+        "start": "#b45309", "stop": "#dc2626", "sync": "#0369a1", "handoff": "#7c3aed",
+    },
+    "Void": {
+        "appearance": "dark",
+        "bg": "#000000", "card": "#0a0a0a", "border": "#1a1a1a",
+        "text": "#aaaaaa", "muted": "#333333",
+        "start": "#444444", "stop": "#666666", "sync": "#555555", "handoff": "#777777",
+    },
 }
 
 SETTINGS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "settings.json")
