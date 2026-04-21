@@ -5,6 +5,7 @@ import json
 import os
 import ctypes
 import re
+import psutil
 from datetime import datetime
 
 CREATE_NO_WINDOW = 0x08000000
@@ -117,29 +118,79 @@ SETTINGS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "settin
 def load_settings():
     try:
         with open(SETTINGS_FILE) as f: return json.load(f)
-    except: return {"theme": "Dark (Default)", "show_chat": True}
+    except: return {}
 
 def save_settings(data):
     try:
         with open(SETTINGS_FILE, "w") as f: json.dump(data, f)
     except: pass
 
-settings = load_settings()
+settings           = load_settings()
 current_theme_name = settings.get("theme", "Dark (Default)")
-show_chat = settings.get("show_chat", True)
-T = THEMES[current_theme_name]
+show_chat          = settings.get("show_chat", True)
+log_left           = settings.get("log_left", False)
+show_perf          = settings.get("show_perf", True)
+fullscreen         = settings.get("fullscreen", False)
+T                  = THEMES[current_theme_name]
 
 ctk.set_appearance_mode(T["appearance"])
 ctk.set_default_color_theme("dark-blue")
 
-server_proc  = None
-server_stdin = None  # pipe to server process stdin
+server_proc   = None
+server_stdin  = None
+server_pid    = None
+perf_running  = False
 
-# ── Window ────────────────────────────────────────────────
+# live perf values
+perf = {
+    "ram_used": "—", "ram_pct": "—", "ram_srv": "—",
+    "cpu_sys": "—",  "cpu_srv": "—",
+    "tps": "—",      "chunks": "—", "players": "0",
+    "uptime": "—",   "threads": "—",
+}
+server_start_time = None
+player_count      = 0
+chunk_count       = 0
+server_ready      = False
+
+# ── Regex ─────────────────────────────────────────────────
+CHAT_RE    = re.compile(r'<([^>]+)>\s*(.+)')
+JOIN_RE    = re.compile(r'^(\w+) joined the game', re.IGNORECASE)
+LEAVE_RE   = re.compile(r'^(\w+) lost connection:', re.IGNORECASE)
+DEATH_RE   = re.compile(r'(\w+) (was |died|fell|drowned|burned|blew|got |hit |walked|withered|starved|suffocated)', re.IGNORECASE)
+STRIP_RE   = re.compile(r'^\[[\d:]+\]\s*\[.*?(?:INFO|WARN|ERROR).*?\]:\s*', re.IGNORECASE)
+DONE_RE    = re.compile(r'Done \([\d.]+s\)!', re.IGNORECASE)
+SPARK_TPS  = re.compile(r'TPS from last 1m, 5m, 15m: ([\d.]+)', re.IGNORECASE)
+TPS_RE2    = re.compile(r'Current TPS[:\s]+([\d.]+)', re.IGNORECASE)
+CHUNK_RE   = re.compile(r'Loading (\d+) persistent chunks for world', re.IGNORECASE)
+CHUNK_RE2  = re.compile(r'Chunks loaded.*?(\d+)', re.IGNORECASE)
+PLAYER_RE  = re.compile(r'There are (\d+) of a max of \d+ players', re.IGNORECASE)
+LIST_RE    = re.compile(r'There are (\d+)/\d+ players', re.IGNORECASE)
+
+def parse_server_line(raw):
+    clean = STRIP_RE.sub('', raw).strip()
+    if not clean: return None
+    # extract perf data silently
+    tps = TPS_RE.search(clean)
+    if tps: perf["tps"] = tps.group(1); return None
+    chk = CHUNK_RE.search(clean)
+    if chk: perf["chunks"] = chk.group(1)
+    pl = PLAYER_RE.search(clean)
+    if pl: perf["players"] = pl.group(1)
+    chat = CHAT_RE.search(clean)
+    if chat: return ('chat', f"💬 {chat.group(1)}: {chat.group(2)}")
+    if JOIN_RE.search(clean):
+        m = JOIN_RE.search(clean); perf["players"] = "?"; return ('event', f"→ {m.group(1)} joined")
+    if LEAVE_RE.search(clean):
+        m = LEAVE_RE.search(clean); return ('event', f"← {m.group(1)} left")
+    if DEATH_RE.search(clean): return ('event', f"💀 {clean}")
+    return ('log', clean)
+
+# ── App ───────────────────────────────────────────────────
 app = ctk.CTk()
 app.title("MC Server Controller")
 app.geometry("900x680")
-app.resizable(False, False)
+app.resizable(True, True)
 app.configure(fg_color=T["bg"])
 
 ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID('gamermahir07.mcserver.launcher.1')
@@ -148,11 +199,13 @@ try:
     app.iconbitmap(ico)
 except: pass
 
-# ── Theme ─────────────────────────────────────────────────
+if fullscreen:
+    app.after(100, lambda: app.attributes("-fullscreen", True))
+
+# ── Theme / layout ────────────────────────────────────────
 def apply_theme(name):
     global T, current_theme_name
-    current_theme_name = name
-    T = THEMES[name]
+    current_theme_name = name; T = THEMES[name]
     s = load_settings(); s["theme"] = name; save_settings(s)
     ctk.set_appearance_mode(T["appearance"])
     app.configure(fg_color=T["bg"])
@@ -162,64 +215,116 @@ def rebuild_ui():
     for w in app.winfo_children(): w.destroy()
     build_ui()
 
-# ── Patterns for server output ────────────────────────────
-CHAT_RE    = re.compile(r'<([^>]+)>\s*(.+)')
-JOIN_RE    = re.compile(r'(\w+) joined the game')
-LEAVE_RE   = re.compile(r'(\w+) left the game')
-DEATH_RE   = re.compile(r'(\w+) (was |died|fell|drowned|burned|blew|got |hit |walked|withered|starved|suffocated)', re.IGNORECASE)
-STRIP_RE   = re.compile(r'^\[[\d:]+\]\s*\[.*?(?:INFO|WARN|ERROR).*?\]:\s*', re.IGNORECASE)
+def swap_layout():
+    global log_left
+    log_left = not log_left
+    s = load_settings(); s["log_left"] = log_left; save_settings(s)
+    rebuild_ui()
 
-def parse_server_line(raw):
-    """Returns (category, display_text) or None to suppress."""
-    clean = STRIP_RE.sub('', raw).strip()
-    if not clean: return None
-    chat = CHAT_RE.search(clean)
-    if chat: return ('chat', f"💬 {chat.group(1)}: {chat.group(2)}")
-    if JOIN_RE.search(clean):  return ('event', f"→ {JOIN_RE.search(clean).group(1)} joined")
-    if LEAVE_RE.search(clean): return ('event', f"← {LEAVE_RE.search(clean).group(1)} left")
-    if DEATH_RE.search(clean): return ('event', f"💀 {clean}")
-    return ('log', clean)
+def toggle_fullscreen():
+    global fullscreen
+    fullscreen = not fullscreen
+    s = load_settings(); s["fullscreen"] = fullscreen; save_settings(s)
+    app.attributes("-fullscreen", fullscreen)
+    if not fullscreen:
+        app.geometry("900x680")
+    rebuild_ui()
 
-# ── UI ────────────────────────────────────────────────────
+def toggle_perf():
+    global show_perf
+    show_perf = not show_perf
+    s = load_settings(); s["show_perf"] = show_perf; save_settings(s)
+    rebuild_ui()
+
+def toggle_chat():
+    global show_chat
+    show_chat = not show_chat
+    s = load_settings(); s["show_chat"] = show_chat; save_settings(s)
+    chat_toggle_btn.configure(text="Hide" if show_chat else "Show")
+    if show_chat:
+        chat_box.configure(height=120)
+        chat_box.pack(fill="x", padx=8, pady=(4,8))
+    else:
+        chat_box.pack_forget()
+        chat_box.configure(height=0)
+
+# ── Build UI ──────────────────────────────────────────────
+perf_labels = {}
+
 def build_ui():
     global status_dot, status_lbl, e_path, e_repo, e_java
     global btn_start, btn_stop, btn_sync, btn_handoff
     global log_box, chat_box, cmd_entry, chat_toggle_btn
 
-    # Top bar
+    is_fs = app.attributes("-fullscreen")
+
+    # ── Top bar ───────────────────────────────────────────
     top = ctk.CTkFrame(app, fg_color="transparent")
-    top.pack(fill="x", padx=20, pady=(16,0))
+    top.pack(fill="x", padx=20, pady=(12,0))
     ctk.CTkLabel(top, text="⛏  MC Server Controller",
                  font=ctk.CTkFont(size=17, weight="bold"),
                  text_color=T["text"]).pack(side="left")
+
+    # right side controls
     status_dot = ctk.CTkLabel(top, text="●", font=ctk.CTkFont(size=13), text_color=T["stop"])
     status_dot.pack(side="right", padx=(0,4))
     status_lbl = ctk.CTkLabel(top, text="Stopped", font=ctk.CTkFont(size=12), text_color=T["muted"])
-    status_lbl.pack(side="right", padx=(0,6))
+    status_lbl.pack(side="right", padx=(0,8))
+
+    ctk.CTkButton(top, text="⛶ " + ("Exit FS" if is_fs else "Fullscreen"),
+                  width=90, height=24, font=ctk.CTkFont(size=11),
+                  fg_color="transparent", border_width=1,
+                  border_color=T["border"], text_color=T["muted"],
+                  hover_color=T["border"], command=toggle_fullscreen
+                  ).pack(side="right", padx=(0,6))
+
+    ctk.CTkButton(top, text="📊 " + ("Hide Perf" if show_perf else "Show Perf"),
+                  width=90, height=24, font=ctk.CTkFont(size=11),
+                  fg_color="transparent", border_width=1,
+                  border_color=T["sync"], text_color=T["sync"],
+                  hover_color=T["border"], command=toggle_perf
+                  ).pack(side="right", padx=(0,6))
+
     ctk.CTkLabel(top, text="Theme:", font=ctk.CTkFont(size=12), text_color=T["muted"]).pack(side="right", padx=(0,6))
     tm = ctk.CTkOptionMenu(top, values=list(THEMES.keys()), command=apply_theme,
-                           font=ctk.CTkFont(size=12), width=160,
+                           font=ctk.CTkFont(size=12), width=150,
                            fg_color=T["card"], button_color=T["border"],
                            button_hover_color=T["muted"], text_color=T["text"],
                            dropdown_fg_color=T["card"], dropdown_text_color=T["text"],
                            dropdown_hover_color=T["border"])
     tm.set(current_theme_name)
-    tm.pack(side="right", padx=(0,12))
+    tm.pack(side="right", padx=(0,8))
 
-    # Body
-    body = ctk.CTkFrame(app, fg_color="transparent")
-    body.pack(fill="both", expand=True, padx=20, pady=(12,16))
-    body.columnconfigure(0, weight=0, minsize=360)
-    body.columnconfigure(1, weight=1)
+    # ── Scrollable main area (non-fullscreen) ─────────────
+    if not is_fs:
+        scroll = ctk.CTkScrollableFrame(app, fg_color="transparent")
+        scroll.pack(fill="both", expand=True, padx=0, pady=(8,0))
+        scroll.columnconfigure(0, weight=1)
+        main_container = scroll
+    else:
+        main_container = ctk.CTkFrame(app, fg_color="transparent")
+        main_container.pack(fill="both", expand=True, padx=0, pady=(8,0))
+        main_container.columnconfigure(0, weight=1)
+
+    # ── Body row (controls + log) ─────────────────────────
+    body = ctk.CTkFrame(main_container, fg_color="transparent")
+    body.pack(fill="both", expand=True, padx=20, pady=(0, 0 if show_perf and is_fs else 12))
+
+    ctrl_col = 1 if log_left else 0
+    log_col  = 0 if log_left else 1
+    body.columnconfigure(ctrl_col, weight=0, minsize=360)
+    body.columnconfigure(log_col,  weight=1)
     body.rowconfigure(0, weight=1)
 
-    # ── Left ──────────────────────────────────────────────
+    # Controls
     left = ctk.CTkFrame(body, fg_color="transparent")
-    left.grid(row=0, column=0, sticky="nsew", padx=(0,10))
+    left.grid(row=0, column=ctrl_col, sticky="nsew",
+              padx=(10,0) if log_left else (0,10))
 
     cfg = ctk.CTkFrame(left, fg_color=T["card"], border_color=T["border"], border_width=1)
     cfg.pack(fill="x", pady=(0,8))
-    ctk.CTkLabel(cfg, text="CONFIGURATION", font=ctk.CTkFont(size=10), text_color=T["muted"]).pack(anchor="w", padx=12, pady=(8,4))
+    ctk.CTkLabel(cfg, text="CONFIGURATION", font=ctk.CTkFont(size=10),
+                 text_color=T["muted"]).pack(anchor="w", padx=12, pady=(8,4))
 
     def cfg_row(parent, label, default):
         row = ctk.CTkFrame(parent, fg_color="transparent")
@@ -227,7 +332,8 @@ def build_ui():
         ctk.CTkLabel(row, text=label, width=64, anchor="w",
                      font=ctk.CTkFont(size=11), text_color=T["muted"]).pack(side="left")
         e = ctk.CTkEntry(row, font=ctk.CTkFont(size=10, family="Consolas"),
-                         fg_color=T["bg"], border_color=T["border"], text_color=T["text"], height=28)
+                         fg_color=T["bg"], border_color=T["border"],
+                         text_color=T["text"], height=28)
         e.insert(0, default)
         e.pack(side="left", fill="x", expand=True)
         return e
@@ -258,20 +364,23 @@ def build_ui():
     btn_sync    = make_btn(left, "↑  Sync & Upload", "Git add all → commit 'Manual Sync' → push",   T["sync"],    lambda: threading.Thread(target=sync_git,    daemon=True).start())
     btn_handoff = make_btn(left, "⇄  Hand Off",      "Stop → push world → friend pulls and starts", T["handoff"], lambda: threading.Thread(target=handoff,     daemon=True).start())
 
-    # ── Right ─────────────────────────────────────────────
+    # Log panel
     right = ctk.CTkFrame(body, fg_color="transparent")
-    right.grid(row=0, column=1, sticky="nsew")
+    right.grid(row=0, column=log_col, sticky="nsew")
     right.rowconfigure(0, weight=1)
     right.rowconfigure(1, weight=0)
     right.rowconfigure(2, weight=0)
     right.columnconfigure(0, weight=1)
 
-    # Activity log
     lf = ctk.CTkFrame(right, fg_color=T["card"], border_color=T["border"], border_width=1)
     lf.grid(row=0, column=0, sticky="nsew", pady=(0,6))
     lt = ctk.CTkFrame(lf, fg_color="transparent")
     lt.pack(fill="x", padx=12, pady=(8,0))
     ctk.CTkLabel(lt, text="ACTIVITY LOG", font=ctk.CTkFont(size=10), text_color=T["muted"]).pack(side="left")
+    ctk.CTkButton(lt, text="⇄ Swap", width=54, height=20, font=ctk.CTkFont(size=10),
+                  fg_color="transparent", border_width=1, border_color=T["sync"],
+                  text_color=T["sync"], hover_color=T["border"],
+                  command=swap_layout).pack(side="right", padx=(4,0))
     ctk.CTkButton(lt, text="Clear", width=44, height=20, font=ctk.CTkFont(size=10),
                   fg_color="transparent", border_width=1, border_color=T["border"],
                   text_color=T["muted"], hover_color=T["border"],
@@ -284,20 +393,18 @@ def build_ui():
                              fg_color="transparent", text_color=T["text"])
     log_box.pack(fill="both", expand=True, padx=8, pady=(4,8))
 
-    # Chat / server output box
     cf = ctk.CTkFrame(right, fg_color=T["card"], border_color=T["border"], border_width=1)
     cf.grid(row=1, column=0, sticky="ew", pady=(0,6))
     ct = ctk.CTkFrame(cf, fg_color="transparent")
     ct.pack(fill="x", padx=12, pady=(8,0))
-    ctk.CTkLabel(ct, text="SERVER CHAT & EVENTS", font=ctk.CTkFont(size=10), text_color=T["muted"]).pack(side="left")
-
+    ctk.CTkLabel(ct, text="SERVER CHAT & EVENTS", font=ctk.CTkFont(size=10),
+                 text_color=T["muted"]).pack(side="left")
     chat_toggle_btn = ctk.CTkButton(ct, text="Hide" if show_chat else "Show",
                                     width=44, height=20, font=ctk.CTkFont(size=10),
                                     fg_color="transparent", border_width=1,
                                     border_color=T["border"], text_color=T["muted"],
                                     hover_color=T["border"], command=toggle_chat)
     chat_toggle_btn.pack(side="right")
-
     ctk.CTkButton(ct, text="Clear", width=44, height=20, font=ctk.CTkFont(size=10),
                   fg_color="transparent", border_width=1, border_color=T["border"],
                   text_color=T["muted"], hover_color=T["border"],
@@ -305,63 +412,190 @@ def build_ui():
                                    chat_box.delete("1.0","end"),
                                    chat_box.configure(state="disabled"))
                   ).pack(side="right", padx=(0,4))
-
     chat_box = ctk.CTkTextbox(cf, font=ctk.CTkFont(size=11, family="Consolas"),
-                              wrap="word", state="disabled",
-                              fg_color="transparent", text_color=T["text"],
-                              height=120 if show_chat else 0)
+                              wrap="word", state="disabled", fg_color="transparent",
+                              text_color=T["text"], height=110 if show_chat else 0)
     if show_chat:
-        chat_box.pack(fill="x", expand=False, padx=8, pady=(4,8))
+        chat_box.pack(fill="x", padx=8, pady=(4,8))
 
-    # Command input
     cmdf = ctk.CTkFrame(right, fg_color=T["card"], border_color=T["border"], border_width=1)
     cmdf.grid(row=2, column=0, sticky="ew")
-    cmdf_inner = ctk.CTkFrame(cmdf, fg_color="transparent")
-    cmdf_inner.pack(fill="x", padx=12, pady=8)
-    ctk.CTkLabel(cmdf_inner, text="/", font=ctk.CTkFont(size=14, weight="bold"),
+    cmdf_i = ctk.CTkFrame(cmdf, fg_color="transparent")
+    cmdf_i.pack(fill="x", padx=12, pady=8)
+    ctk.CTkLabel(cmdf_i, text="/", font=ctk.CTkFont(size=14, weight="bold"),
                  text_color=T["muted"], width=14).pack(side="left")
-    cmd_entry = ctk.CTkEntry(cmdf_inner, font=ctk.CTkFont(size=12, family="Consolas"),
+    cmd_entry = ctk.CTkEntry(cmdf_i, font=ctk.CTkFont(size=12, family="Consolas"),
                              fg_color=T["bg"], border_color=T["border"],
-                             text_color=T["text"], placeholder_text="type a command or chat message...",
+                             text_color=T["text"],
+                             placeholder_text="type a command or chat message...",
                              height=32)
     cmd_entry.pack(side="left", fill="x", expand=True, padx=(4,8))
     cmd_entry.bind("<Return>", lambda e: send_command())
-    ctk.CTkButton(cmdf_inner, text="Send", width=60, height=32,
+    ctk.CTkButton(cmdf_i, text="Send", width=60, height=32,
                   font=ctk.CTkFont(size=12), fg_color=T["sync"],
                   hover_color=T["sync"], text_color="#000",
                   command=send_command).pack(side="left")
 
+    # ── Performance panel ─────────────────────────────────
+    if show_perf:
+        build_perf_panel(main_container if not is_fs else app, is_fs)
+
+def build_perf_panel(parent, pinned_bottom=False):
+    global perf_labels
+    perf_labels = {}
+
+    pf = ctk.CTkFrame(parent, fg_color=T["card"], border_color=T["border"], border_width=1)
+    if pinned_bottom:
+        pf.pack(side="bottom", fill="x", padx=20, pady=(0,12))
+    else:
+        pf.pack(fill="x", padx=20, pady=(0,12))
+
+    ph = ctk.CTkFrame(pf, fg_color="transparent")
+    ph.pack(fill="x", padx=12, pady=(8,4))
+    ctk.CTkLabel(ph, text="SERVER PERFORMANCE",
+                 font=ctk.CTkFont(size=10), text_color=T["muted"]).pack(side="left")
+    ctk.CTkLabel(ph, text="Updates every 2s",
+                 font=ctk.CTkFont(size=10), text_color=T["muted"]).pack(side="right")
+
+    grid = ctk.CTkFrame(pf, fg_color="transparent")
+    grid.pack(fill="x", padx=12, pady=(0,10))
+
+    stats = [
+        ("TPS",         "tps",      "Ticks/sec (20 = perfect)"),
+        ("Players",     "players",  "Online players"),
+        ("Chunks",      "chunks",   "Loaded chunks"),
+        ("Uptime",      "uptime",   "Server uptime"),
+        ("RAM (Total)", "ram_used", "System RAM used"),
+        ("RAM %",       "ram_pct",  "System RAM usage %"),
+        ("RAM (Server)","ram_srv",  "Java process RAM"),
+        ("CPU (System)","cpu_sys",  "Total CPU usage"),
+        ("CPU (Server)","cpu_srv",  "Java process CPU"),
+        ("Threads",     "threads",  "Java thread count"),
+    ]
+
+    for i, (label, key, tip) in enumerate(stats):
+        col = i % 5
+        row = i // 5
+        cell = ctk.CTkFrame(grid, fg_color=T["bg"], border_color=T["border"],
+                            border_width=1, corner_radius=6)
+        cell.grid(row=row, column=col, padx=4, pady=4, sticky="ew")
+        grid.columnconfigure(col, weight=1)
+        ctk.CTkLabel(cell, text=label, font=ctk.CTkFont(size=10),
+                     text_color=T["muted"]).pack(pady=(6,0))
+        lbl = ctk.CTkLabel(cell, text=perf[key],
+                           font=ctk.CTkFont(size=14, weight="bold"),
+                           text_color=T["text"])
+        lbl.pack(pady=(0,6))
+        perf_labels[key] = lbl
+
+def update_perf_labels():
+    for key, lbl in perf_labels.items():
+        try:
+            val = perf[key]
+            # color TPS by health
+            if key == "tps":
+                try:
+                    t = float(val)
+                    color = T["start"] if t >= 18 else T["handoff"] if t >= 15 else T["stop"]
+                except: color = T["text"]
+                lbl.configure(text=val, text_color=color)
+            elif key in ("cpu_sys", "cpu_srv", "ram_pct"):
+                try:
+                    n = float(str(val).replace("%",""))
+                    color = T["start"] if n < 60 else T["handoff"] if n < 85 else T["stop"]
+                except: color = T["text"]
+                lbl.configure(text=val, text_color=color)
+            else:
+                lbl.configure(text=val, text_color=T["text"])
+        except: pass
+
+# ── Performance polling thread ────────────────────────────
+def find_java_proc():
+    """Find the java.exe process running server.jar."""
+    for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
+        try:
+            if proc.info['name'] and 'java' in proc.info['name'].lower():
+                cmdline = ' '.join(proc.info['cmdline'] or [])
+                if 'server.jar' in cmdline:
+                    return proc
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            pass
+    return None
+
+def perf_loop():
+    global perf_running
+    perf_running = True
+    java_proc = None
+    poll_tick = 0
+    while perf_running:
+        try:
+            vm = psutil.virtual_memory()
+            perf["ram_used"] = f"{vm.used / 1024**3:.1f} GB"
+            perf["ram_pct"]  = f"{vm.percent:.0f}%"
+            perf["cpu_sys"]  = f"{psutil.cpu_percent(interval=None):.0f}%"
+
+            # find java proc by name
+            if java_proc is None:
+                java_proc = find_java_proc()
+            if java_proc:
+                try:
+                    ram_mb = java_proc.memory_info().rss / 1024**2
+                    perf["ram_srv"] = f"{ram_mb:.0f} MB"
+                    perf["cpu_srv"] = f"{java_proc.cpu_percent(interval=None):.0f}%"
+                    perf["threads"] = str(java_proc.num_threads())
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    java_proc = None
+                    perf["ram_srv"] = "—"; perf["cpu_srv"] = "—"; perf["threads"] = "—"
+            else:
+                perf["ram_srv"] = "—"; perf["cpu_srv"] = "—"; perf["threads"] = "—"
+
+            # uptime
+            if server_start_time:
+                secs = int((datetime.now() - server_start_time).total_seconds())
+                h, r = divmod(secs, 3600); m, s = divmod(r, 60)
+                perf["uptime"] = f"{h:02d}:{m:02d}:{s:02d}"
+            else:
+                perf["uptime"] = "—"
+
+            # only send commands once server is fully ready
+            if server_ready and server_stdin:
+                try:
+                    # /tps every 10s for spark TPS output
+                    if poll_tick % 5 == 0:
+                        server_stdin.write("tps\n"); server_stdin.flush()
+                    # /list every 30s to keep player count accurate
+                    if poll_tick % 15 == 0:
+                        server_stdin.write("list\n"); server_stdin.flush()
+                except: pass
+
+            poll_tick += 1
+            app.after(0, update_perf_labels)
+        except Exception: pass
+        import time; time.sleep(2)
+
 # ── Helpers ───────────────────────────────────────────────
 def log(msg):
     ts = datetime.now().strftime("%H:%M:%S")
-    log_box.configure(state="normal")
-    log_box.insert("end", f"[{ts}]  {msg}\n")
-    log_box.configure(state="disabled")
-    log_box.see("end")
+    try:
+        log_box.configure(state="normal")
+        log_box.insert("end", f"[{ts}]  {msg}\n")
+        log_box.configure(state="disabled")
+        log_box.see("end")
+    except: pass
 
 def log_chat(msg):
     if not show_chat: return
     ts = datetime.now().strftime("%H:%M:%S")
-    chat_box.configure(state="normal")
-    chat_box.insert("end", f"[{ts}]  {msg}\n")
-    chat_box.configure(state="disabled")
-    chat_box.see("end")
+    try:
+        chat_box.configure(state="normal")
+        chat_box.insert("end", f"[{ts}]  {msg}\n")
+        chat_box.configure(state="disabled")
+        chat_box.see("end")
+    except: pass
 
 def set_status(txt, color):
-    status_lbl.configure(text=txt)
-    status_dot.configure(text_color=color)
-
-def toggle_chat():
-    global show_chat
-    show_chat = not show_chat
-    s = load_settings(); s["show_chat"] = show_chat; save_settings(s)
-    chat_toggle_btn.configure(text="Hide" if show_chat else "Show")
-    if show_chat:
-        chat_box.configure(height=120)
-        chat_box.pack(fill="x", expand=False, padx=8, pady=(4,8))
-    else:
-        chat_box.pack_forget()
-        chat_box.configure(height=0)
+    try: status_lbl.configure(text=txt); status_dot.configure(text_color=color)
+    except: pass
 
 def send_command():
     global server_stdin
@@ -372,8 +606,7 @@ def send_command():
         log("Server is not running — start the server first.")
         return
     try:
-        server_stdin.write(cmd + "\n")
-        server_stdin.flush()
+        server_stdin.write(cmd + "\n"); server_stdin.flush()
         log(f"→ {cmd}")
     except Exception as ex:
         log(f"Failed to send command: {ex}")
@@ -391,26 +624,22 @@ def run_cmd(cmd, cwd=None):
         log(str(ex)); return False
 
 def set_all_buttons(state):
-    for b in [btn_start, btn_stop, btn_sync, btn_handoff]: b.configure(state=state)
+    for b in [btn_start, btn_stop, btn_sync, btn_handoff]:
+        try: b.configure(state=state)
+        except: pass
 
-# ── Server stdout reader ──────────────────────────────────
 def read_server_output(proc):
-    """Reads server stdout line by line and routes to chat or log."""
     for raw in iter(proc.stdout.readline, ''):
         if not raw: break
         parsed = parse_server_line(raw)
         if parsed is None: continue
         cat, text = parsed
-        if cat == 'chat':
-            app.after(0, log_chat, text)
-        elif cat == 'event':
-            app.after(0, log_chat, text)
-        else:
-            app.after(0, log, text)
+        if cat in ('chat', 'event'): app.after(0, log_chat, text)
+        else: app.after(0, log, text)
 
 # ── Actions ───────────────────────────────────────────────
 def start_server():
-    global server_proc, server_stdin
+    global server_proc, server_stdin, server_pid, server_start_time, perf_running
     set_all_buttons("disabled")
     path, java = e_path.get(), e_java.get()
     set_status("Starting...", T["handoff"])
@@ -435,14 +664,22 @@ def start_server():
         stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
         text=True, bufsize=1, creationflags=CREATE_NO_WINDOW
     )
-    server_stdin = server_proc.stdin
+    server_stdin      = server_proc.stdin
+    server_pid        = server_proc.pid
+    server_start_time = datetime.now()
+    player_count      = 0
+    chunk_count       = 0
+    server_ready      = False
+    perf["tps"] = "—"; perf["chunks"] = "0"; perf["players"] = "0"
     threading.Thread(target=read_server_output, args=(server_proc,), daemon=True).start()
+    if not perf_running:
+        threading.Thread(target=perf_loop, daemon=True).start()
     set_status("Running", T["start"])
     log("Server is running! (PID " + str(server_proc.pid) + ")")
     btn_stop.configure(state="normal")
 
 def stop_server():
-    global server_proc, server_stdin
+    global server_proc, server_stdin, server_pid, server_start_time, perf_running
     set_status("Stopping...", T["handoff"])
     log("── Stop Server ───────────────────")
     if server_stdin:
@@ -452,10 +689,10 @@ def stop_server():
     result = subprocess.run("taskkill /F /IM java.exe", shell=True, capture_output=True,
                             text=True, creationflags=CREATE_NO_WINDOW)
     log("  Java process killed." if result.returncode == 0 else "  Java was not running.")
-    if server_proc:
-        try: server_proc.terminate()
-        except: pass
-        server_proc = None
+    server_proc = None; server_pid = None; server_start_time = None
+    perf_running = False
+    for k in ("tps","chunks","players","uptime","ram_srv","cpu_srv","threads"):
+        perf[k] = "—"
     path = e_path.get()
     log("Pushing world to GitHub...")
     run_cmd("git add world/ world_nether/ world_the_end/", cwd=path)
@@ -485,7 +722,7 @@ def sync_git():
     set_all_buttons("normal")
 
 def handoff():
-    global server_stdin
+    global server_stdin, server_pid, server_start_time, perf_running
     set_all_buttons("disabled")
     path = e_path.get()
     set_status("Handing off...", T["handoff"])
@@ -496,6 +733,9 @@ def handoff():
         except: pass
         server_stdin = None
     run_cmd("taskkill /F /IM java.exe")
+    server_pid = None; server_start_time = None; perf_running = False
+    for k in ("tps","chunks","players","uptime","ram_srv","cpu_srv","threads"):
+        perf[k] = "—"
     log("[2/3] Syncing world to GitHub...")
     run_cmd("git pull origin main --rebase", cwd=path)
     run_cmd("git add world/ world_nether/ world_the_end/", cwd=path)
