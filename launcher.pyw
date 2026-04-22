@@ -5,8 +5,8 @@ import json
 import os
 import ctypes
 import re
-import psutil
 from datetime import datetime
+import psutil
 
 CREATE_NO_WINDOW = 0x08000000
 
@@ -105,13 +105,17 @@ THEMES = {
         "text": "#3d2b00", "muted": "#8a6a30",
         "start": "#5a8a00", "stop": "#c0392b", "sync": "#1a6b8a", "handoff": "#c07000",
     },
-    # ── 16 new themes ────────────────────────────────────
-    # Standard
+    "Void": {
+        "appearance": "dark",
+        "bg": "#000000", "card": "#0a0a0a", "border": "#1a1a1a",
+        "text": "#aaaaaa", "muted": "#333333",
+        "start": "#444444", "stop": "#666666", "sync": "#555555", "handoff": "#777777",
+    },
     "Carbon": {
         "appearance": "dark",
         "bg": "#1a1a2e", "card": "#16213e", "border": "#0f3460",
         "text": "#e0e0e0", "muted": "#4a4a6a",
-        "start": "#00c896", "stop": "#e94560", "sync": "#0f3460", "handoff": "#f5a623",
+        "start": "#00c896", "stop": "#e94560", "sync": "#4d9fff", "handoff": "#f5a623",
     },
     "Lavender": {
         "appearance": "light",
@@ -155,7 +159,6 @@ THEMES = {
         "text": "#ebdbb2", "muted": "#7c6f64",
         "start": "#b8bb26", "stop": "#fb4934", "sync": "#83a598", "handoff": "#fabd2f",
     },
-    # Colorblind-friendly
     "CB: Blue & Orange": {
         "appearance": "light",
         "bg": "#f7f7f7", "card": "#ffffff", "border": "#cccccc",
@@ -204,12 +207,6 @@ THEMES = {
         "text": "#000000", "muted": "#666666",
         "start": "#222222", "stop": "#777777", "sync": "#444444", "handoff": "#555555",
     },
-    "Void": {
-        "appearance": "dark",
-        "bg": "#000000", "card": "#0a0a0a", "border": "#1a1a1a",
-        "text": "#aaaaaa", "muted": "#333333",
-        "start": "#444444", "stop": "#666666", "sync": "#555555", "handoff": "#777777",
-    },
 }
 
 SETTINGS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "settings.json")
@@ -241,8 +238,10 @@ server_proc   = None
 server_stdin  = None
 server_pid    = None
 perf_running  = False
+server_ready  = False
+player_count  = 0
+auto_upload_timer = None
 
-# live perf values
 perf = {
     "ram_used": "—", "ram_pct": "—", "ram_srv": "—",
     "cpu_sys": "—",  "cpu_srv": "—",
@@ -250,9 +249,6 @@ perf = {
     "uptime": "—",   "threads": "—",
 }
 server_start_time = None
-player_count      = 0
-chunk_count       = 0
-server_ready      = False
 
 # ── Regex ─────────────────────────────────────────────────
 CHAT_RE    = re.compile(r'<([^>]+)>\s*(.+)')
@@ -263,27 +259,37 @@ STRIP_RE   = re.compile(r'^\[[\d:]+\]\s*\[.*?(?:INFO|WARN|ERROR).*?\]:\s*', re.I
 DONE_RE    = re.compile(r'Done \([\d.]+s\)!', re.IGNORECASE)
 SPARK_TPS  = re.compile(r'TPS from last 1m, 5m, 15m: ([\d.]+)', re.IGNORECASE)
 TPS_RE2    = re.compile(r'Current TPS[:\s]+([\d.]+)', re.IGNORECASE)
-PING_RE    = re.compile(r'(\w+).*?(\d+)ms', re.IGNORECASE)
-LATENCY_RE = re.compile(r'Average latency.*?(\d+)', re.IGNORECASE)
 PLAYER_RE  = re.compile(r'There are (\d+) of a max of \d+ players', re.IGNORECASE)
 LIST_RE    = re.compile(r'There are (\d+)/\d+ players', re.IGNORECASE)
+LATENCY_RE = re.compile(r'Average latency.*?(\d+)', re.IGNORECASE)
+PING_RE    = re.compile(r'(\w+).*?(\d+)ms', re.IGNORECASE)
 
 def parse_server_line(raw):
+    global player_count, server_ready
     clean = STRIP_RE.sub('', raw).strip()
     if not clean: return None
-    # extract perf data silently
-    tps = TPS_RE.search(clean)
+    if DONE_RE.search(clean):
+        server_ready = True
+        return ('log', clean)
+    tps = SPARK_TPS.search(clean) or TPS_RE2.search(clean)
     if tps: perf["tps"] = tps.group(1); return None
-    chk = CHUNK_RE.search(clean)
-    if chk: perf["chunks"] = chk.group(1)
-    pl = PLAYER_RE.search(clean)
-    if pl: perf["players"] = pl.group(1)
+    lat = LATENCY_RE.search(clean)
+    if lat: perf["latency"] = f"{lat.group(1)} ms"; return None
+    pl = PLAYER_RE.search(clean) or LIST_RE.search(clean)
+    if pl:
+        player_count = int(pl.group(1))
+        perf["players"] = str(player_count)
+        return None
     chat = CHAT_RE.search(clean)
     if chat: return ('chat', f"💬 {chat.group(1)}: {chat.group(2)}")
-    if JOIN_RE.search(clean):
-        m = JOIN_RE.search(clean); perf["players"] = "?"; return ('event', f"→ {m.group(1)} joined")
-    if LEAVE_RE.search(clean):
-        m = LEAVE_RE.search(clean); return ('event', f"← {m.group(1)} left")
+    join = JOIN_RE.search(clean)
+    if join:
+        player_count += 1; perf["players"] = str(player_count)
+        return ('event', f"→ {join.group(1)} joined")
+    leave = LEAVE_RE.search(clean)
+    if leave:
+        player_count = max(0, player_count - 1); perf["players"] = str(player_count)
+        return ('event', f"← {leave.group(1)} left")
     if DEATH_RE.search(clean): return ('event', f"💀 {clean}")
     return ('log', clean)
 
@@ -327,51 +333,8 @@ def toggle_fullscreen():
     fullscreen = not fullscreen
     s = load_settings(); s["fullscreen"] = fullscreen; save_settings(s)
     app.attributes("-fullscreen", fullscreen)
-    if not fullscreen:
-        app.geometry("900x680")
+    if not fullscreen: app.geometry("900x680")
     rebuild_ui()
-
-def toggle_auto_upload():
-    global auto_upload
-    auto_upload = not auto_upload
-    s = load_settings(); s["auto_upload"] = auto_upload; save_settings(s)
-    if auto_upload:
-        log(f"Auto-upload enabled every {auto_upload_mins} min.")
-        schedule_auto_upload()
-    else:
-        log("Auto-upload disabled.")
-    rebuild_ui()
-
-def set_auto_upload_mins(val):
-    global auto_upload_mins
-    try:
-        auto_upload_mins = max(1, int(float(val)))
-        s = load_settings(); s["auto_upload_mins"] = auto_upload_mins; save_settings(s)
-    except: pass
-
-def schedule_auto_upload():
-    if not auto_upload: return
-    threading.Thread(target=_auto_upload_worker, daemon=True).start()
-
-def _auto_upload_worker():
-    import time
-    time.sleep(auto_upload_mins * 60)
-    if not auto_upload: return
-    log(f"── Auto-upload ───────────────────")
-    path = e_path.get() if 'e_path' in globals() else SRV_PATH
-    repo = e_repo.get() if 'e_repo' in globals() else REPO_URL
-    run_cmd("git remote set-url origin " + repo, cwd=path)
-    run_cmd("git add .", cwd=path)
-    result = subprocess.run(
-        f'git commit -m "Auto-upload {datetime.now().strftime("%Y-%m-%d %H:%M")}"',
-        shell=True, cwd=path, capture_output=True, text=True,
-        creationflags=CREATE_NO_WINDOW)
-    if "nothing to commit" in result.stdout or result.returncode != 0:
-        log("  Auto-upload: nothing new to commit.")
-    else:
-        run_cmd("git push origin main", cwd=path)
-        log("  Auto-upload complete.")
-    schedule_auto_upload()  # reschedule
 
 def toggle_perf():
     global show_perf
@@ -385,11 +348,95 @@ def toggle_chat():
     s = load_settings(); s["show_chat"] = show_chat; save_settings(s)
     chat_toggle_btn.configure(text="Hide" if show_chat else "Show")
     if show_chat:
-        chat_box.configure(height=120)
+        chat_box.configure(height=110)
         chat_box.pack(fill="x", padx=8, pady=(4,8))
     else:
         chat_box.pack_forget()
         chat_box.configure(height=0)
+
+# ── Auto upload ───────────────────────────────────────────
+def open_auto_upload_config():
+    win = ctk.CTkToplevel(app)
+    win.title("Auto Upload Config")
+    win.geometry("300x200")
+    win.resizable(False, False)
+    win.configure(fg_color=T["bg"])
+    win.grab_set()
+    ctk.CTkLabel(win, text="AUTO UPLOAD", font=ctk.CTkFont(size=13, weight="bold"),
+                 text_color=T["text"]).pack(pady=(18,4))
+    ctk.CTkLabel(win, text="Automatically push files to GitHub on a timer.",
+                 font=ctk.CTkFont(size=11), text_color=T["muted"], wraplength=260).pack(pady=(0,14))
+    row = ctk.CTkFrame(win, fg_color="transparent")
+    row.pack(fill="x", padx=24, pady=(0,10))
+    ctk.CTkLabel(row, text="Interval (minutes):", font=ctk.CTkFont(size=12),
+                 text_color=T["text"]).pack(side="left")
+    mins_var = ctk.StringVar(value=str(auto_upload_mins))
+    ctk.CTkEntry(row, width=56, height=28, textvariable=mins_var,
+                 font=ctk.CTkFont(size=12, family="Consolas"),
+                 fg_color=T["card"], border_color=T["border"],
+                 text_color=T["text"]).pack(side="right")
+    def save_and_close():
+        set_auto_upload_mins(mins_var.get())
+        win.destroy(); rebuild_ui()
+    def toggle_and_close():
+        toggle_auto_upload(); win.destroy()
+    btns = ctk.CTkFrame(win, fg_color="transparent")
+    btns.pack(fill="x", padx=24)
+    ctk.CTkButton(btns, text="Turn OFF" if auto_upload else "Turn ON",
+                  height=30, font=ctk.CTkFont(size=12),
+                  fg_color=T["stop"] if auto_upload else T["start"],
+                  hover_color=T["stop"] if auto_upload else T["start"],
+                  text_color="#000", command=toggle_and_close).pack(side="left", expand=True, padx=(0,4))
+    ctk.CTkButton(btns, text="Save", height=30, font=ctk.CTkFont(size=12),
+                  fg_color=T["sync"], hover_color=T["sync"],
+                  text_color="#000", command=save_and_close).pack(side="left", expand=True)
+
+def toggle_auto_upload():
+    global auto_upload
+    auto_upload = not auto_upload
+    s = load_settings(); s["auto_upload"] = auto_upload; save_settings(s)
+    if auto_upload:
+        log(f"Auto-upload enabled every {auto_upload_mins} min.")
+        schedule_auto_upload()
+    else:
+        log("Auto-upload disabled.")
+        if auto_upload_timer: auto_upload_timer.cancel()
+    rebuild_ui()
+
+def set_auto_upload_mins(val):
+    global auto_upload_mins
+    try:
+        auto_upload_mins = max(1, int(float(val)))
+        s = load_settings(); s["auto_upload_mins"] = auto_upload_mins; save_settings(s)
+    except: pass
+
+def schedule_auto_upload():
+    global auto_upload_timer
+    if auto_upload_timer:
+        try: auto_upload_timer.cancel()
+        except: pass
+    if not auto_upload: return
+    auto_upload_timer = threading.Timer(auto_upload_mins * 60, _do_auto_upload)
+    auto_upload_timer.daemon = True
+    auto_upload_timer.start()
+
+def _do_auto_upload():
+    if not auto_upload: return
+    app.after(0, log, "── Auto-upload ───────────────────")
+    try: path = e_path.get(); repo = e_repo.get()
+    except: path = SRV_PATH; repo = REPO_URL
+    run_cmd("git remote set-url origin " + repo, cwd=path)
+    run_cmd("git add .", cwd=path)
+    result = subprocess.run(
+        f'git commit -m "Auto-upload {datetime.now().strftime("%Y-%m-%d %H:%M")}"',
+        shell=True, cwd=path, capture_output=True, text=True,
+        creationflags=CREATE_NO_WINDOW)
+    if "nothing to commit" in result.stdout or result.returncode != 0:
+        app.after(0, log, "  Auto-upload: nothing new to commit.")
+    else:
+        run_cmd("git push origin main", cwd=path)
+        app.after(0, log, "  Auto-upload complete.")
+    schedule_auto_upload()
 
 # ── Build UI ──────────────────────────────────────────────
 perf_labels = {}
@@ -401,53 +448,32 @@ def build_ui():
 
     is_fs = app.attributes("-fullscreen")
 
-    # ── Top bar ───────────────────────────────────────────
+    # Top bar
     top = ctk.CTkFrame(app, fg_color="transparent")
     top.pack(fill="x", padx=20, pady=(12,0))
     ctk.CTkLabel(top, text="⛏  MC Server Controller",
                  font=ctk.CTkFont(size=17, weight="bold"),
                  text_color=T["text"]).pack(side="left")
-
-    # right side controls
     status_dot = ctk.CTkLabel(top, text="●", font=ctk.CTkFont(size=13), text_color=T["stop"])
     status_dot.pack(side="right", padx=(0,4))
     status_lbl = ctk.CTkLabel(top, text="Stopped", font=ctk.CTkFont(size=12), text_color=T["muted"])
     status_lbl.pack(side="right", padx=(0,8))
-
     ctk.CTkButton(top, text="⛶ " + ("Exit FS" if is_fs else "Fullscreen"),
                   width=90, height=24, font=ctk.CTkFont(size=11),
                   fg_color="transparent", border_width=1,
                   border_color=T["border"], text_color=T["muted"],
-                  hover_color=T["border"], command=toggle_fullscreen
-                  ).pack(side="right", padx=(0,6))
-
+                  hover_color=T["border"], command=toggle_fullscreen).pack(side="right", padx=(0,6))
     ctk.CTkButton(top, text="📊 " + ("Hide Perf" if show_perf else "Show Perf"),
                   width=90, height=24, font=ctk.CTkFont(size=11),
                   fg_color="transparent", border_width=1,
                   border_color=T["sync"], text_color=T["sync"],
-                  hover_color=T["border"], command=toggle_perf
-                  ).pack(side="right", padx=(0,6))
-
-    # Auto-upload controls
-    ctk.CTkButton(top, text="↑ Auto: " + ("ON" if auto_upload else "OFF"),
-                  width=90, height=24, font=ctk.CTkFont(size=11),
+                  hover_color=T["border"], command=toggle_perf).pack(side="right", padx=(0,6))
+    ctk.CTkButton(top, text="↑ Auto Upload",
+                  width=100, height=24, font=ctk.CTkFont(size=11),
                   fg_color="transparent", border_width=1,
                   border_color=T["start"] if auto_upload else T["border"],
                   text_color=T["start"] if auto_upload else T["muted"],
-                  hover_color=T["border"], command=toggle_auto_upload
-                  ).pack(side="right", padx=(0,4))
-    mins_entry = ctk.CTkEntry(top, width=36, height=24,
-                              font=ctk.CTkFont(size=11, family="Consolas"),
-                              fg_color=T["card"], border_color=T["border"],
-                              text_color=T["text"])
-    mins_entry.insert(0, str(auto_upload_mins))
-    mins_entry.pack(side="right", padx=(0,2))
-    mins_entry.bind("<Return>", lambda e: set_auto_upload_mins(mins_entry.get()))
-    mins_entry.bind("<FocusOut>", lambda e: set_auto_upload_mins(mins_entry.get()))
-    ctk.CTkLabel(top, text="min", font=ctk.CTkFont(size=11),
-                 text_color=T["muted"]).pack(side="right")
-
-    ctk.CTkLabel(top, text="Theme:", font=ctk.CTkFont(size=12), text_color=T["muted"]).pack(side="right", padx=(0,6))
+                  hover_color=T["border"], command=open_auto_upload_config).pack(side="right", padx=(0,6))
     tm = ctk.CTkOptionMenu(top, values=list(THEMES.keys()), command=apply_theme,
                            font=ctk.CTkFont(size=12), width=150,
                            fg_color=T["card"], button_color=T["border"],
@@ -457,7 +483,7 @@ def build_ui():
     tm.set(current_theme_name)
     tm.pack(side="right", padx=(0,8))
 
-    # ── Scrollable main area (non-fullscreen) ─────────────
+    # Main scrollable or fixed container
     if not is_fs:
         scroll = ctk.CTkScrollableFrame(app, fg_color="transparent")
         scroll.pack(fill="both", expand=True, padx=0, pady=(8,0))
@@ -468,10 +494,9 @@ def build_ui():
         main_container.pack(fill="both", expand=True, padx=0, pady=(8,0))
         main_container.columnconfigure(0, weight=1)
 
-    # ── Body row (controls + log) ─────────────────────────
+    # Body
     body = ctk.CTkFrame(main_container, fg_color="transparent")
-    body.pack(fill="both", expand=True, padx=20, pady=(0, 0 if show_perf and is_fs else 12))
-
+    body.pack(fill="both", expand=True, padx=20, pady=(0,12))
     ctrl_col = 1 if log_left else 0
     log_col  = 0 if log_left else 1
     body.columnconfigure(ctrl_col, weight=0, minsize=360)
@@ -480,8 +505,7 @@ def build_ui():
 
     # Controls
     left = ctk.CTkFrame(body, fg_color="transparent")
-    left.grid(row=0, column=ctrl_col, sticky="nsew",
-              padx=(10,0) if log_left else (0,10))
+    left.grid(row=0, column=ctrl_col, sticky="nsew", padx=(10,0) if log_left else (0,10))
 
     cfg = ctk.CTkFrame(left, fg_color=T["card"], border_color=T["border"], border_width=1)
     cfg.pack(fill="x", pady=(0,8))
@@ -494,8 +518,7 @@ def build_ui():
         ctk.CTkLabel(row, text=label, width=64, anchor="w",
                      font=ctk.CTkFont(size=11), text_color=T["muted"]).pack(side="left")
         e = ctk.CTkEntry(row, font=ctk.CTkFont(size=10, family="Consolas"),
-                         fg_color=T["bg"], border_color=T["border"],
-                         text_color=T["text"], height=28)
+                         fg_color=T["bg"], border_color=T["border"], text_color=T["text"], height=28)
         e.insert(0, default)
         e.pack(side="left", fill="x", expand=True)
         return e
@@ -587,10 +610,8 @@ def build_ui():
     ctk.CTkLabel(cmdf_i, text="/", font=ctk.CTkFont(size=14, weight="bold"),
                  text_color=T["muted"], width=14).pack(side="left")
     cmd_entry = ctk.CTkEntry(cmdf_i, font=ctk.CTkFont(size=12, family="Consolas"),
-                             fg_color=T["bg"], border_color=T["border"],
-                             text_color=T["text"],
-                             placeholder_text="type a command or chat message...",
-                             height=32)
+                             fg_color=T["bg"], border_color=T["border"], text_color=T["text"],
+                             placeholder_text="type a command or chat message...", height=32)
     cmd_entry.pack(side="left", fill="x", expand=True, padx=(4,8))
     cmd_entry.bind("<Return>", lambda e: send_command())
     ctk.CTkButton(cmdf_i, text="Send", width=60, height=32,
@@ -598,30 +619,25 @@ def build_ui():
                   hover_color=T["sync"], text_color="#000",
                   command=send_command).pack(side="left")
 
-    # ── Performance panel ─────────────────────────────────
     if show_perf:
         build_perf_panel(main_container if not is_fs else app, is_fs)
 
 def build_perf_panel(parent, pinned_bottom=False):
     global perf_labels
     perf_labels = {}
-
     pf = ctk.CTkFrame(parent, fg_color=T["card"], border_color=T["border"], border_width=1)
     if pinned_bottom:
         pf.pack(side="bottom", fill="x", padx=20, pady=(0,12))
     else:
         pf.pack(fill="x", padx=20, pady=(0,12))
-
     ph = ctk.CTkFrame(pf, fg_color="transparent")
     ph.pack(fill="x", padx=12, pady=(8,4))
-    ctk.CTkLabel(ph, text="SERVER PERFORMANCE",
-                 font=ctk.CTkFont(size=10), text_color=T["muted"]).pack(side="left")
-    ctk.CTkLabel(ph, text="Updates every 2s",
-                 font=ctk.CTkFont(size=10), text_color=T["muted"]).pack(side="right")
-
+    ctk.CTkLabel(ph, text="SERVER PERFORMANCE", font=ctk.CTkFont(size=10),
+                 text_color=T["muted"]).pack(side="left")
+    ctk.CTkLabel(ph, text="Updates every 2s", font=ctk.CTkFont(size=10),
+                 text_color=T["muted"]).pack(side="right")
     grid = ctk.CTkFrame(pf, fg_color="transparent")
     grid.pack(fill="x", padx=12, pady=(0,10))
-
     stats = [
         ("TPS",           "tps",      "Ticks/sec (20 = perfect)"),
         ("Players",       "players",  "Online players"),
@@ -634,10 +650,8 @@ def build_perf_panel(parent, pinned_bottom=False):
         ("CPU (Server)",  "cpu_srv",  "Java process CPU"),
         ("Threads",       "threads",  "Java thread count"),
     ]
-
-    for i, (label, key, tip) in enumerate(stats):
-        col = i % 5
-        row = i // 5
+    for i, (label, key, _) in enumerate(stats):
+        col = i % 5; row = i // 5
         cell = ctk.CTkFrame(grid, fg_color=T["bg"], border_color=T["border"],
                             border_width=1, corner_radius=6)
         cell.grid(row=row, column=col, padx=4, pady=4, sticky="ew")
@@ -654,7 +668,6 @@ def update_perf_labels():
     for key, lbl in perf_labels.items():
         try:
             val = perf[key]
-            # color TPS by health
             if key == "tps":
                 try:
                     t = float(val)
@@ -677,17 +690,14 @@ def update_perf_labels():
                 lbl.configure(text=val, text_color=T["text"])
         except: pass
 
-# ── Performance polling thread ────────────────────────────
+# ── Performance polling ───────────────────────────────────
 def find_java_proc():
-    """Find the java.exe process running server.jar."""
     for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
         try:
             if proc.info['name'] and 'java' in proc.info['name'].lower():
-                cmdline = ' '.join(proc.info['cmdline'] or [])
-                if 'server.jar' in cmdline:
+                if 'server.jar' in ' '.join(proc.info['cmdline'] or []):
                     return proc
-        except (psutil.NoSuchProcess, psutil.AccessDenied):
-            pass
+        except (psutil.NoSuchProcess, psutil.AccessDenied): pass
     return None
 
 def perf_loop():
@@ -698,17 +708,13 @@ def perf_loop():
     while perf_running:
         try:
             vm = psutil.virtual_memory()
-            perf["ram_used"] = f"{vm.used / 1024**3:.1f} GB"
+            perf["ram_used"] = f"{vm.used/1024**3:.1f} GB"
             perf["ram_pct"]  = f"{vm.percent:.0f}%"
             perf["cpu_sys"]  = f"{psutil.cpu_percent(interval=None):.0f}%"
-
-            # find java proc by name
-            if java_proc is None:
-                java_proc = find_java_proc()
+            if java_proc is None: java_proc = find_java_proc()
             if java_proc:
                 try:
-                    ram_mb = java_proc.memory_info().rss / 1024**2
-                    perf["ram_srv"] = f"{ram_mb:.0f} MB"
+                    perf["ram_srv"] = f"{java_proc.memory_info().rss/1024**2:.0f} MB"
                     perf["cpu_srv"] = f"{java_proc.cpu_percent(interval=None):.0f}%"
                     perf["threads"] = str(java_proc.num_threads())
                 except (psutil.NoSuchProcess, psutil.AccessDenied):
@@ -716,28 +722,21 @@ def perf_loop():
                     perf["ram_srv"] = "—"; perf["cpu_srv"] = "—"; perf["threads"] = "—"
             else:
                 perf["ram_srv"] = "—"; perf["cpu_srv"] = "—"; perf["threads"] = "—"
-
-            # uptime
             if server_start_time:
-                secs = int((datetime.now() - server_start_time).total_seconds())
-                h, r = divmod(secs, 3600); m, s = divmod(r, 60)
+                secs = int((datetime.now()-server_start_time).total_seconds())
+                h,r = divmod(secs,3600); m,s = divmod(r,60)
                 perf["uptime"] = f"{h:02d}:{m:02d}:{s:02d}"
             else:
                 perf["uptime"] = "—"
-
             if server_ready and server_stdin:
                 try:
-                    if poll_tick % 5 == 0:
-                        server_stdin.write("tps\n"); server_stdin.flush()
-                    if poll_tick % 10 == 0:
-                        server_stdin.write("ping\n"); server_stdin.flush()
-                    if poll_tick % 15 == 0:
-                        server_stdin.write("list\n"); server_stdin.flush()
+                    if poll_tick % 5  == 0: server_stdin.write("tps\n");  server_stdin.flush()
+                    if poll_tick % 10 == 0: server_stdin.write("ping\n"); server_stdin.flush()
+                    if poll_tick % 15 == 0: server_stdin.write("list\n"); server_stdin.flush()
                 except: pass
-
             poll_tick += 1
             app.after(0, update_perf_labels)
-        except Exception: pass
+        except: pass
         import time; time.sleep(2)
 
 # ── Helpers ───────────────────────────────────────────────
@@ -765,13 +764,11 @@ def set_status(txt, color):
     except: pass
 
 def send_command():
-    global server_stdin
     cmd = cmd_entry.get().strip()
     if not cmd: return
     cmd_entry.delete(0, "end")
     if server_stdin is None:
-        log("Server is not running — start the server first.")
-        return
+        log("Server is not running — start it first."); return
     try:
         server_stdin.write(cmd + "\n"); server_stdin.flush()
         log(f"→ {cmd}")
@@ -801,12 +798,12 @@ def read_server_output(proc):
         parsed = parse_server_line(raw)
         if parsed is None: continue
         cat, text = parsed
-        if cat in ('chat', 'event'): app.after(0, log_chat, text)
+        if cat in ('chat','event'): app.after(0, log_chat, text)
         else: app.after(0, log, text)
 
 # ── Actions ───────────────────────────────────────────────
 def start_server():
-    global server_proc, server_stdin, server_pid, server_start_time, perf_running
+    global server_proc, server_stdin, server_pid, server_start_time, perf_running, server_ready, player_count
     set_all_buttons("disabled")
     path, java = e_path.get(), e_java.get()
     set_status("Starting...", T["handoff"])
@@ -829,13 +826,12 @@ def start_server():
     server_proc = subprocess.Popen(
         java_cmd, shell=True, cwd=path,
         stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-        text=True, bufsize=1, creationflags=CREATE_NO_WINDOW
-    )
+        text=True, bufsize=1, creationflags=CREATE_NO_WINDOW)
     server_stdin      = server_proc.stdin
     server_pid        = server_proc.pid
     server_start_time = datetime.now()
-    player_count      = 0
     server_ready      = False
+    player_count      = 0
     perf["tps"] = "—"; perf["latency"] = "—"; perf["players"] = "0"
     threading.Thread(target=read_server_output, args=(server_proc,), daemon=True).start()
     if not perf_running:
@@ -845,7 +841,7 @@ def start_server():
     btn_stop.configure(state="normal")
 
 def stop_server():
-    global server_proc, server_stdin, server_pid, server_start_time, perf_running
+    global server_proc, server_stdin, server_pid, server_start_time, perf_running, server_ready
     set_status("Stopping...", T["handoff"])
     log("── Stop Server ───────────────────")
     if server_stdin:
@@ -856,7 +852,7 @@ def stop_server():
                             text=True, creationflags=CREATE_NO_WINDOW)
     log("  Java process killed." if result.returncode == 0 else "  Java was not running.")
     server_proc = None; server_pid = None; server_start_time = None
-    perf_running = False
+    server_ready = False; perf_running = False
     for k in ("tps","latency","players","uptime","ram_srv","cpu_srv","threads"):
         perf[k] = "—"
     path = e_path.get()
@@ -888,7 +884,7 @@ def sync_git():
     set_all_buttons("normal")
 
 def handoff():
-    global server_stdin, server_pid, server_start_time, perf_running
+    global server_stdin, server_pid, server_start_time, perf_running, server_ready
     set_all_buttons("disabled")
     path = e_path.get()
     set_status("Handing off...", T["handoff"])
@@ -899,8 +895,9 @@ def handoff():
         except: pass
         server_stdin = None
     run_cmd("taskkill /F /IM java.exe")
-    server_pid = None; server_start_time = None; perf_running = False
-    for k in ("tps","chunks","players","uptime","ram_srv","cpu_srv","threads"):
+    server_pid = None; server_start_time = None
+    server_ready = False; perf_running = False
+    for k in ("tps","latency","players","uptime","ram_srv","cpu_srv","threads"):
         perf[k] = "—"
     log("[2/3] Syncing world to GitHub...")
     run_cmd("git pull origin main --rebase", cwd=path)
