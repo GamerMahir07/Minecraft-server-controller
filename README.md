@@ -25,7 +25,7 @@ JAVA_PATH: The location of your java.exe.
 
 REPO_URL: Your GitHub repository for world storage.
 
-also do this in the cmd (for the performance monitoring to work) python -m pip install psutil
+Also, do this in the CMD python -m pip install psutil
 
 UsageStart:
-Pulls the latest files from GitHub and launches the server.Stop: Sends the /stop command to the server, kills the Java process, and pushes world/, world_nether/, and world_the_end/ to your repository.Sync & Upload: Performs a manual git add . and push for non-world files (like configuration changes).Console: Type commands (without the leading /) into the bottom entry field to interact with the server live.
+Pulls the latest files from GitHub and launches the server. Stop: Sends the /stop command to the server, kills the Java process, and pushes world/, world_nether/, and world_the_end/ to your repository.Sync & Upload: Performs a manual git add . and push for non-world files (like configuration changes).Console: Type commands (without the leading /) into the bottom entry field to interact with the server live.
