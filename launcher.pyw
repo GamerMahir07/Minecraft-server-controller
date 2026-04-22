@@ -41,9 +41,9 @@ THEMES = {
     },
     "Nether Red": {
         "appearance": "dark",
-        "bg": "#1a0a0a", "card": "#2a0f0f", "border": "#4a1a1a",
-        "text": "#fde0d0", "muted": "#6a3a3a",
-        "start": "#fb923c", "stop": "#f87171", "sync": "#fca5a5", "handoff": "#fcd34d",
+        "bg": "#000000", "card": "#1a0000", "border": "#6a0000",
+        "text": "#ff4444", "muted": "#8b0000",
+        "start": "#ff6b6b", "stop": "#ff0000", "sync": "#ff8c8c", "handoff": "#ffd700",
     },
     "Ocean": {
         "appearance": "dark",
@@ -101,9 +101,108 @@ THEMES = {
     },
     "Sand": {
         "appearance": "light",
-        "bg": "#fdf6e3", "card": "#fffaf0", "border": "#e8d8b0",
-        "text": "#2c1a00", "muted": "#9a7a40",
-        "start": "#b45309", "stop": "#dc2626", "sync": "#0369a1", "handoff": "#7c3aed",
+        "bg": "#f5e6c8", "card": "#fdf3e0", "border": "#c8a96e",
+        "text": "#3d2b00", "muted": "#8a6a30",
+        "start": "#5a8a00", "stop": "#c0392b", "sync": "#1a6b8a", "handoff": "#c07000",
+    },
+    # ── 16 new themes ────────────────────────────────────
+    # Standard
+    "Carbon": {
+        "appearance": "dark",
+        "bg": "#1a1a2e", "card": "#16213e", "border": "#0f3460",
+        "text": "#e0e0e0", "muted": "#4a4a6a",
+        "start": "#00c896", "stop": "#e94560", "sync": "#0f3460", "handoff": "#f5a623",
+    },
+    "Lavender": {
+        "appearance": "light",
+        "bg": "#f0eeff", "card": "#ffffff", "border": "#c5b8ff",
+        "text": "#1a0050", "muted": "#7060a0",
+        "start": "#5b21b6", "stop": "#db2777", "sync": "#4f46e5", "handoff": "#d97706",
+    },
+    "Mocha": {
+        "appearance": "dark",
+        "bg": "#1c1410", "card": "#2a1f18", "border": "#4a3428",
+        "text": "#f0dece", "muted": "#7a5a48",
+        "start": "#c8a86e", "stop": "#e05050", "sync": "#90b8d0", "handoff": "#e8c060",
+    },
+    "Sakura": {
+        "appearance": "light",
+        "bg": "#fff0f5", "card": "#ffffff", "border": "#ffb8cc",
+        "text": "#3a0020", "muted": "#c06080",
+        "start": "#be185d", "stop": "#e11d48", "sync": "#9d174d", "handoff": "#f59e0b",
+    },
+    "Matrix": {
+        "appearance": "dark",
+        "bg": "#000000", "card": "#001400", "border": "#004400",
+        "text": "#00ff41", "muted": "#006600",
+        "start": "#00ff41", "stop": "#ff0000", "sync": "#00cc33", "handoff": "#ffff00",
+    },
+    "Nord": {
+        "appearance": "dark",
+        "bg": "#2e3440", "card": "#3b4252", "border": "#434c5e",
+        "text": "#eceff4", "muted": "#4c566a",
+        "start": "#a3be8c", "stop": "#bf616a", "sync": "#88c0d0", "handoff": "#ebcb8b",
+    },
+    "Solarized": {
+        "appearance": "light",
+        "bg": "#fdf6e3", "card": "#eee8d5", "border": "#93a1a1",
+        "text": "#073642", "muted": "#657b83",
+        "start": "#859900", "stop": "#dc322f", "sync": "#268bd2", "handoff": "#b58900",
+    },
+    "Gruvbox": {
+        "appearance": "dark",
+        "bg": "#282828", "card": "#3c3836", "border": "#504945",
+        "text": "#ebdbb2", "muted": "#7c6f64",
+        "start": "#b8bb26", "stop": "#fb4934", "sync": "#83a598", "handoff": "#fabd2f",
+    },
+    # Colorblind-friendly
+    "CB: Blue & Orange": {
+        "appearance": "light",
+        "bg": "#f7f7f7", "card": "#ffffff", "border": "#cccccc",
+        "text": "#000000", "muted": "#767676",
+        "start": "#0072b2", "stop": "#d55e00", "sync": "#56b4e9", "handoff": "#e69f00",
+    },
+    "CB: Dark Blue & Orange": {
+        "appearance": "dark",
+        "bg": "#111111", "card": "#1e1e1e", "border": "#333333",
+        "text": "#ffffff", "muted": "#888888",
+        "start": "#56b4e9", "stop": "#d55e00", "sync": "#0072b2", "handoff": "#e69f00",
+    },
+    "CB: Green & Purple": {
+        "appearance": "light",
+        "bg": "#f5f5f5", "card": "#ffffff", "border": "#cccccc",
+        "text": "#000000", "muted": "#767676",
+        "start": "#009e73", "stop": "#cc79a7", "sync": "#0072b2", "handoff": "#f0e442",
+    },
+    "CB: High Contrast": {
+        "appearance": "light",
+        "bg": "#ffffff", "card": "#f0f0f0", "border": "#000000",
+        "text": "#000000", "muted": "#444444",
+        "start": "#0000ff", "stop": "#ff0000", "sync": "#007700", "handoff": "#ff8800",
+    },
+    "CB: Dark High Contrast": {
+        "appearance": "dark",
+        "bg": "#000000", "card": "#1a1a1a", "border": "#ffffff",
+        "text": "#ffffff", "muted": "#aaaaaa",
+        "start": "#ffff00", "stop": "#ff6600", "sync": "#00ffff", "handoff": "#ff99ff",
+    },
+    "CB: Tol Muted": {
+        "appearance": "light",
+        "bg": "#f8f4f0", "card": "#ffffff", "border": "#bbaabb",
+        "text": "#221122", "muted": "#887799",
+        "start": "#44aa99", "stop": "#cc6677", "sync": "#88ccee", "handoff": "#ddcc77",
+    },
+    "CB: Tol Dark": {
+        "appearance": "dark",
+        "bg": "#221122", "card": "#332244", "border": "#554466",
+        "text": "#eeddff", "muted": "#887799",
+        "start": "#44aa99", "stop": "#cc6677", "sync": "#88ccee", "handoff": "#ddcc77",
+    },
+    "CB: Monochrome": {
+        "appearance": "light",
+        "bg": "#ffffff", "card": "#f0f0f0", "border": "#999999",
+        "text": "#000000", "muted": "#666666",
+        "start": "#222222", "stop": "#777777", "sync": "#444444", "handoff": "#555555",
     },
     "Void": {
         "appearance": "dark",
@@ -131,6 +230,8 @@ show_chat          = settings.get("show_chat", True)
 log_left           = settings.get("log_left", False)
 show_perf          = settings.get("show_perf", True)
 fullscreen         = settings.get("fullscreen", False)
+auto_upload        = settings.get("auto_upload", False)
+auto_upload_mins   = settings.get("auto_upload_mins", 10)
 T                  = THEMES[current_theme_name]
 
 ctk.set_appearance_mode(T["appearance"])
@@ -145,7 +246,7 @@ perf_running  = False
 perf = {
     "ram_used": "—", "ram_pct": "—", "ram_srv": "—",
     "cpu_sys": "—",  "cpu_srv": "—",
-    "tps": "—",      "chunks": "—", "players": "0",
+    "tps": "—",      "latency": "—", "players": "0",
     "uptime": "—",   "threads": "—",
 }
 server_start_time = None
@@ -162,8 +263,8 @@ STRIP_RE   = re.compile(r'^\[[\d:]+\]\s*\[.*?(?:INFO|WARN|ERROR).*?\]:\s*', re.I
 DONE_RE    = re.compile(r'Done \([\d.]+s\)!', re.IGNORECASE)
 SPARK_TPS  = re.compile(r'TPS from last 1m, 5m, 15m: ([\d.]+)', re.IGNORECASE)
 TPS_RE2    = re.compile(r'Current TPS[:\s]+([\d.]+)', re.IGNORECASE)
-CHUNK_RE   = re.compile(r'Loading (\d+) persistent chunks for world', re.IGNORECASE)
-CHUNK_RE2  = re.compile(r'Chunks loaded.*?(\d+)', re.IGNORECASE)
+PING_RE    = re.compile(r'(\w+).*?(\d+)ms', re.IGNORECASE)
+LATENCY_RE = re.compile(r'Average latency.*?(\d+)', re.IGNORECASE)
 PLAYER_RE  = re.compile(r'There are (\d+) of a max of \d+ players', re.IGNORECASE)
 LIST_RE    = re.compile(r'There are (\d+)/\d+ players', re.IGNORECASE)
 
@@ -230,6 +331,48 @@ def toggle_fullscreen():
         app.geometry("900x680")
     rebuild_ui()
 
+def toggle_auto_upload():
+    global auto_upload
+    auto_upload = not auto_upload
+    s = load_settings(); s["auto_upload"] = auto_upload; save_settings(s)
+    if auto_upload:
+        log(f"Auto-upload enabled every {auto_upload_mins} min.")
+        schedule_auto_upload()
+    else:
+        log("Auto-upload disabled.")
+    rebuild_ui()
+
+def set_auto_upload_mins(val):
+    global auto_upload_mins
+    try:
+        auto_upload_mins = max(1, int(float(val)))
+        s = load_settings(); s["auto_upload_mins"] = auto_upload_mins; save_settings(s)
+    except: pass
+
+def schedule_auto_upload():
+    if not auto_upload: return
+    threading.Thread(target=_auto_upload_worker, daemon=True).start()
+
+def _auto_upload_worker():
+    import time
+    time.sleep(auto_upload_mins * 60)
+    if not auto_upload: return
+    log(f"── Auto-upload ───────────────────")
+    path = e_path.get() if 'e_path' in globals() else SRV_PATH
+    repo = e_repo.get() if 'e_repo' in globals() else REPO_URL
+    run_cmd("git remote set-url origin " + repo, cwd=path)
+    run_cmd("git add .", cwd=path)
+    result = subprocess.run(
+        f'git commit -m "Auto-upload {datetime.now().strftime("%Y-%m-%d %H:%M")}"',
+        shell=True, cwd=path, capture_output=True, text=True,
+        creationflags=CREATE_NO_WINDOW)
+    if "nothing to commit" in result.stdout or result.returncode != 0:
+        log("  Auto-upload: nothing new to commit.")
+    else:
+        run_cmd("git push origin main", cwd=path)
+        log("  Auto-upload complete.")
+    schedule_auto_upload()  # reschedule
+
 def toggle_perf():
     global show_perf
     show_perf = not show_perf
@@ -284,6 +427,25 @@ def build_ui():
                   border_color=T["sync"], text_color=T["sync"],
                   hover_color=T["border"], command=toggle_perf
                   ).pack(side="right", padx=(0,6))
+
+    # Auto-upload controls
+    ctk.CTkButton(top, text="↑ Auto: " + ("ON" if auto_upload else "OFF"),
+                  width=90, height=24, font=ctk.CTkFont(size=11),
+                  fg_color="transparent", border_width=1,
+                  border_color=T["start"] if auto_upload else T["border"],
+                  text_color=T["start"] if auto_upload else T["muted"],
+                  hover_color=T["border"], command=toggle_auto_upload
+                  ).pack(side="right", padx=(0,4))
+    mins_entry = ctk.CTkEntry(top, width=36, height=24,
+                              font=ctk.CTkFont(size=11, family="Consolas"),
+                              fg_color=T["card"], border_color=T["border"],
+                              text_color=T["text"])
+    mins_entry.insert(0, str(auto_upload_mins))
+    mins_entry.pack(side="right", padx=(0,2))
+    mins_entry.bind("<Return>", lambda e: set_auto_upload_mins(mins_entry.get()))
+    mins_entry.bind("<FocusOut>", lambda e: set_auto_upload_mins(mins_entry.get()))
+    ctk.CTkLabel(top, text="min", font=ctk.CTkFont(size=11),
+                 text_color=T["muted"]).pack(side="right")
 
     ctk.CTkLabel(top, text="Theme:", font=ctk.CTkFont(size=12), text_color=T["muted"]).pack(side="right", padx=(0,6))
     tm = ctk.CTkOptionMenu(top, values=list(THEMES.keys()), command=apply_theme,
@@ -461,16 +623,16 @@ def build_perf_panel(parent, pinned_bottom=False):
     grid.pack(fill="x", padx=12, pady=(0,10))
 
     stats = [
-        ("TPS",         "tps",      "Ticks/sec (20 = perfect)"),
-        ("Players",     "players",  "Online players"),
-        ("Chunks",      "chunks",   "Loaded chunks"),
-        ("Uptime",      "uptime",   "Server uptime"),
-        ("RAM (Total)", "ram_used", "System RAM used"),
-        ("RAM %",       "ram_pct",  "System RAM usage %"),
-        ("RAM (Server)","ram_srv",  "Java process RAM"),
-        ("CPU (System)","cpu_sys",  "Total CPU usage"),
-        ("CPU (Server)","cpu_srv",  "Java process CPU"),
-        ("Threads",     "threads",  "Java thread count"),
+        ("TPS",           "tps",      "Ticks/sec (20 = perfect)"),
+        ("Players",       "players",  "Online players"),
+        ("Avg Latency",   "latency",  "Avg player-to-server ping"),
+        ("Uptime",        "uptime",   "Server uptime"),
+        ("RAM (Total)",   "ram_used", "System RAM used"),
+        ("RAM %",         "ram_pct",  "System RAM usage %"),
+        ("RAM (Server)",  "ram_srv",  "Java process RAM"),
+        ("CPU (System)",  "cpu_sys",  "Total CPU usage"),
+        ("CPU (Server)",  "cpu_srv",  "Java process CPU"),
+        ("Threads",       "threads",  "Java thread count"),
     ]
 
     for i, (label, key, tip) in enumerate(stats):
@@ -503,6 +665,12 @@ def update_perf_labels():
                 try:
                     n = float(str(val).replace("%",""))
                     color = T["start"] if n < 60 else T["handoff"] if n < 85 else T["stop"]
+                except: color = T["text"]
+                lbl.configure(text=val, text_color=color)
+            elif key == "latency":
+                try:
+                    n = float(str(val).replace("ms","").strip())
+                    color = T["start"] if n < 60 else T["handoff"] if n < 120 else T["stop"]
                 except: color = T["text"]
                 lbl.configure(text=val, text_color=color)
             else:
@@ -557,13 +725,12 @@ def perf_loop():
             else:
                 perf["uptime"] = "—"
 
-            # only send commands once server is fully ready
             if server_ready and server_stdin:
                 try:
-                    # /tps every 10s for spark TPS output
                     if poll_tick % 5 == 0:
                         server_stdin.write("tps\n"); server_stdin.flush()
-                    # /list every 30s to keep player count accurate
+                    if poll_tick % 10 == 0:
+                        server_stdin.write("ping\n"); server_stdin.flush()
                     if poll_tick % 15 == 0:
                         server_stdin.write("list\n"); server_stdin.flush()
                 except: pass
@@ -668,9 +835,8 @@ def start_server():
     server_pid        = server_proc.pid
     server_start_time = datetime.now()
     player_count      = 0
-    chunk_count       = 0
     server_ready      = False
-    perf["tps"] = "—"; perf["chunks"] = "0"; perf["players"] = "0"
+    perf["tps"] = "—"; perf["latency"] = "—"; perf["players"] = "0"
     threading.Thread(target=read_server_output, args=(server_proc,), daemon=True).start()
     if not perf_running:
         threading.Thread(target=perf_loop, daemon=True).start()
@@ -691,7 +857,7 @@ def stop_server():
     log("  Java process killed." if result.returncode == 0 else "  Java was not running.")
     server_proc = None; server_pid = None; server_start_time = None
     perf_running = False
-    for k in ("tps","chunks","players","uptime","ram_srv","cpu_srv","threads"):
+    for k in ("tps","latency","players","uptime","ram_srv","cpu_srv","threads"):
         perf[k] = "—"
     path = e_path.get()
     log("Pushing world to GitHub...")
@@ -749,4 +915,6 @@ def handoff():
     set_all_buttons("normal")
 
 build_ui()
+if auto_upload:
+    schedule_auto_upload()
 app.mainloop()
