@@ -318,7 +318,15 @@ def apply_theme(name):
     app.configure(fg_color=T["bg"])
     rebuild_ui()
 
+log_history  = ""
+chat_history = ""
+
 def rebuild_ui():
+    global log_history, chat_history
+    try: log_history  = log_box.get("1.0", "end")
+    except: pass
+    try: chat_history = chat_box.get("1.0", "end")
+    except: pass
     for w in app.winfo_children(): w.destroy()
     build_ui()
 
@@ -422,21 +430,38 @@ def schedule_auto_upload():
 
 def _do_auto_upload():
     if not auto_upload: return
-    app.after(0, log, "── Auto-upload ───────────────────")
+    # grab path/repo safely on main thread values
     try: path = e_path.get(); repo = e_repo.get()
     except: path = SRV_PATH; repo = REPO_URL
-    run_cmd("git remote set-url origin " + repo, cwd=path)
-    run_cmd("git add .", cwd=path)
-    result = subprocess.run(
-        f'git commit -m "Auto-upload {datetime.now().strftime("%Y-%m-%d %H:%M")}"',
-        shell=True, cwd=path, capture_output=True, text=True,
-        creationflags=CREATE_NO_WINDOW)
-    if "nothing to commit" in result.stdout or result.returncode != 0:
-        app.after(0, log, "  Auto-upload: nothing new to commit.")
-    else:
-        run_cmd("git push origin main", cwd=path)
-        app.after(0, log, "  Auto-upload complete.")
-    schedule_auto_upload()
+
+    def _upload():
+        app.after(0, log, "── Auto-upload ───────────────────")
+        try:
+            subprocess.run(f'git remote set-url origin {repo}',
+                           shell=True, cwd=path, capture_output=True,
+                           creationflags=CREATE_NO_WINDOW)
+            subprocess.run('git add .',
+                           shell=True, cwd=path, capture_output=True,
+                           creationflags=CREATE_NO_WINDOW)
+            result = subprocess.run(
+                f'git commit -m "Auto-upload {datetime.now().strftime("%Y-%m-%d %H:%M")}"',
+                shell=True, cwd=path, capture_output=True, text=True,
+                creationflags=CREATE_NO_WINDOW)
+            if "nothing to commit" in result.stdout or result.returncode != 0:
+                app.after(0, log, "  Auto-upload: nothing new to commit.")
+            else:
+                push = subprocess.run('git push origin main',
+                                      shell=True, cwd=path, capture_output=True,
+                                      text=True, creationflags=CREATE_NO_WINDOW)
+                if push.returncode == 0:
+                    app.after(0, log, "  Auto-upload complete.")
+                else:
+                    app.after(0, log, "  Auto-upload push failed: " + push.stderr.strip())
+        except Exception as ex:
+            app.after(0, log, f"  Auto-upload error: {ex}")
+        schedule_auto_upload()
+
+    threading.Thread(target=_upload, daemon=True).start()
 
 # ── Build UI ──────────────────────────────────────────────
 perf_labels = {}
@@ -544,10 +569,10 @@ def build_ui():
         b.pack(anchor="e", pady=(4,0))
         return b
 
-    btn_start   = make_btn(left, "▶  Start Server",  "Git pull → launch with Aikar JVM flags",      T["start"],   lambda: threading.Thread(target=start_server, daemon=True).start())
-    btn_stop    = make_btn(left, "■  Stop Server",   "Kill Java process → push world to GitHub",    T["stop"],    lambda: threading.Thread(target=stop_server,  daemon=True).start())
-    btn_sync    = make_btn(left, "↑  Sync & Upload", "Git add all → commit 'Manual Sync' → push",   T["sync"],    lambda: threading.Thread(target=sync_git,    daemon=True).start())
-    btn_handoff = make_btn(left, "⇄  Hand Off",      "Stop → push world → friend pulls and starts", T["handoff"], lambda: threading.Thread(target=handoff,     daemon=True).start())
+    btn_start   = make_btn(left, "▶  Start Server",  "Git pull → launch with Aikar JVM flags",    T["start"], lambda: threading.Thread(target=start_server, daemon=True).start())
+    btn_stop    = make_btn(left, "■  Stop Server",   "Kill Java process → push world to GitHub",  T["stop"],  lambda: threading.Thread(target=stop_server,  daemon=True).start())
+    btn_sync    = make_btn(left, "↑  Sync & Upload", "Git add all → commit 'Manual Sync' → push", T["sync"],  lambda: threading.Thread(target=sync_git,    daemon=True).start())
+    btn_handoff = None
 
     # Log panel
     right = ctk.CTkFrame(body, fg_color="transparent")
@@ -577,6 +602,11 @@ def build_ui():
                              wrap="word", state="disabled",
                              fg_color="transparent", text_color=T["text"])
     log_box.pack(fill="both", expand=True, padx=8, pady=(4,8))
+    if log_history.strip():
+        log_box.configure(state="normal")
+        log_box.insert("1.0", log_history)
+        log_box.configure(state="disabled")
+        log_box.see("end")
 
     cf = ctk.CTkFrame(right, fg_color=T["card"], border_color=T["border"], border_width=1)
     cf.grid(row=1, column=0, sticky="ew", pady=(0,6))
@@ -602,6 +632,11 @@ def build_ui():
                               text_color=T["text"], height=110 if show_chat else 0)
     if show_chat:
         chat_box.pack(fill="x", padx=8, pady=(4,8))
+    if chat_history.strip():
+        chat_box.configure(state="normal")
+        chat_box.insert("1.0", chat_history)
+        chat_box.configure(state="disabled")
+        chat_box.see("end")
 
     cmdf = ctk.CTkFrame(right, fg_color=T["card"], border_color=T["border"], border_width=1)
     cmdf.grid(row=2, column=0, sticky="ew")
@@ -621,6 +656,7 @@ def build_ui():
 
     if show_perf:
         build_perf_panel(main_container if not is_fs else app, is_fs)
+    build_ip_panel(main_container if not is_fs else app, is_fs)
 
 def build_perf_panel(parent, pinned_bottom=False):
     global perf_labels
@@ -664,7 +700,139 @@ def build_perf_panel(parent, pinned_bottom=False):
         lbl.pack(pady=(0,6))
         perf_labels[key] = lbl
 
-def update_perf_labels():
+def build_ip_panel(parent, pinned_bottom=False):
+    import socket, urllib.request
+
+    def get_local_ip():
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            s.connect(("8.8.8.8", 80))
+            ip = s.getsockname()[0]; s.close(); return ip
+        except: return "127.0.0.1"
+
+    local_ip = get_local_ip()
+    port_val = settings.get("server_port", "25565")
+
+    pf = ctk.CTkFrame(parent, fg_color=T["card"], border_color=T["border"], border_width=1)
+    if pinned_bottom:
+        pf.pack(side="bottom", fill="x", padx=20, pady=(0,12))
+    else:
+        pf.pack(fill="x", padx=20, pady=(0,12))
+
+    ph = ctk.CTkFrame(pf, fg_color="transparent")
+    ph.pack(fill="x", padx=12, pady=(8,4))
+    ctk.CTkLabel(ph, text="SERVER IPs", font=ctk.CTkFont(size=10),
+                 text_color=T["muted"]).pack(side="left")
+
+    grid = ctk.CTkFrame(pf, fg_color="transparent")
+    grid.pack(fill="x", padx=12, pady=(0,10))
+    grid.columnconfigure((0,1,2,3,4), weight=1)
+
+    port_var = ctk.StringVar(value=port_val)
+
+    def save_port(*_):
+        s = load_settings(); s["server_port"] = port_var.get(); save_settings(s)
+
+    port_var.trace_add("write", save_port)
+
+    ext_ip_var = ctk.StringVar(value="fetching...")
+
+    def make_ip_cell(col, label, val_widget_fn):
+        cell = ctk.CTkFrame(grid, fg_color=T["bg"], border_color=T["border"],
+                            border_width=1, corner_radius=6)
+        cell.grid(row=0, column=col, padx=4, pady=4, sticky="ew")
+        ctk.CTkLabel(cell, text=label, font=ctk.CTkFont(size=10),
+                     text_color=T["muted"]).pack(pady=(6,2), padx=8)
+        val_widget_fn(cell)
+
+    # Port cell
+    def port_cell(parent):
+        ctk.CTkEntry(parent, textvariable=port_var, width=80, height=26,
+                     font=ctk.CTkFont(size=12, family="Consolas"),
+                     fg_color=T["card"], border_color=T["border"],
+                     text_color=T["text"]).pack(pady=(0,6))
+    make_ip_cell(0, "Port", port_cell)
+
+    # Local IP cell
+    local_lbl_ref = []
+    def local_cell(parent):
+        lbl = ctk.CTkLabel(parent, text=f"{local_ip}:{port_var.get()}",
+                           font=ctk.CTkFont(size=11, family="Consolas"),
+                           text_color=T["start"])
+        lbl.pack(pady=(0,2), padx=8)
+        local_lbl_ref.append(lbl)
+        def on_port(*_): lbl.configure(text=f"{local_ip}:{port_var.get()}")
+        port_var.trace_add("write", on_port)
+        ctk.CTkButton(parent, text="Copy", width=50, height=22,
+                      font=ctk.CTkFont(size=10), fg_color="transparent",
+                      border_width=1, border_color=T["border"],
+                      text_color=T["muted"], hover_color=T["border"],
+                      command=lambda: (app.clipboard_clear(),
+                                       app.clipboard_append(f"{local_ip}:{port_var.get()}")
+                                       )).pack(pady=(0,6))
+    make_ip_cell(1, "Local IP (same network)", local_cell)
+
+    # External IP cell
+    def ext_cell(parent):
+        lbl = ctk.CTkLabel(parent, textvariable=ext_ip_var,
+                           font=ctk.CTkFont(size=11, family="Consolas"),
+                           text_color=T["sync"])
+        lbl.pack(pady=(0,2), padx=8)
+        ctk.CTkButton(parent, text="Copy", width=50, height=22,
+                      font=ctk.CTkFont(size=10), fg_color="transparent",
+                      border_width=1, border_color=T["border"],
+                      text_color=T["muted"], hover_color=T["border"],
+                      command=lambda: (app.clipboard_clear(),
+                                       app.clipboard_append(ext_ip_var.get())
+                                       )).pack(pady=(0,6))
+    make_ip_cell(2, "External IP (internet)", ext_cell)
+
+    # Custom domain cell
+    custom_var = ctk.StringVar(value=settings.get("custom_ip", ""))
+    def custom_cell(parent):
+        e = ctk.CTkEntry(parent, textvariable=custom_var, height=26,
+                         font=ctk.CTkFont(size=11, family="Consolas"),
+                         fg_color=T["card"], border_color=T["border"],
+                         text_color=T["text"],
+                         placeholder_text="play.myserver.net")
+        e.pack(pady=(0,2), padx=8, fill="x")
+        def set_custom():
+            v = custom_var.get().strip()
+            if v:
+                ext_ip_var.set(f"{v}:{port_var.get()}")
+                s = load_settings(); s["custom_ip"] = v; save_settings(s)
+        ctk.CTkButton(parent, text="Set as External", width=100, height=22,
+                      font=ctk.CTkFont(size=10), fg_color=T["sync"],
+                      hover_color=T["sync"], text_color="#000",
+                      command=set_custom).pack(pady=(0,6))
+    make_ip_cell(3, "Custom domain / IP", custom_cell)
+
+    # Localhost cell
+    def local_self_cell(parent):
+        ctk.CTkLabel(parent, text=f"localhost:{port_var.get()}",
+                     font=ctk.CTkFont(size=11, family="Consolas"),
+                     text_color=T["handoff"]).pack(pady=(0,2), padx=8)
+        ctk.CTkButton(parent, text="Copy", width=50, height=22,
+                      font=ctk.CTkFont(size=10), fg_color="transparent",
+                      border_width=1, border_color=T["border"],
+                      text_color=T["muted"], hover_color=T["border"],
+                      command=lambda: (app.clipboard_clear(),
+                                       app.clipboard_append(f"localhost:{port_var.get()}")
+                                       )).pack(pady=(0,6))
+    make_ip_cell(4, "This PC (localhost)", local_self_cell)
+
+    # Fetch external IP
+    def fetch_ext_ip():
+        try:
+            ip = urllib.request.urlopen("https://api.ipify.org", timeout=5).read().decode()
+            saved_custom = settings.get("custom_ip", "")
+            if saved_custom:
+                app.after(0, lambda: ext_ip_var.set(f"{saved_custom}:{port_var.get()}"))
+            else:
+                app.after(0, lambda: ext_ip_var.set(f"{ip}:{port_var.get()}"))
+        except:
+            app.after(0, lambda: ext_ip_var.set("unavailable"))
+    threading.Thread(target=fetch_ext_ip, daemon=True).start()
     for key, lbl in perf_labels.items():
         try:
             val = perf[key]
@@ -788,7 +956,7 @@ def run_cmd(cmd, cwd=None):
         log(str(ex)); return False
 
 def set_all_buttons(state):
-    for b in [btn_start, btn_stop, btn_sync, btn_handoff]:
+    for b in [btn_start, btn_stop, btn_sync]:
         try: b.configure(state=state)
         except: pass
 
