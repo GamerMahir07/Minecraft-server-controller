@@ -1,3 +1,8 @@
+import time
+import matplotlib
+matplotlib.use("TkAgg")
+from matplotlib.figure import Figure
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import customtkinter as ctk
 import subprocess
 import threading
@@ -10,7 +15,7 @@ import psutil
 
 CREATE_NO_WINDOW = 0x08000000
 
-SRV_PATH = r"C:\Users\DigitalComputer\Desktop\mc"
+SRV_PATH  = r"C:\Users\DigitalComputer\Desktop\mc"
 JAVA_PATH = r"C:\Program Files\Eclipse Adoptium\jdk-21.0.10.7-hotspot\bin\java.exe"
 REPO_URL  = "https://github.com/GamerMahir07/minecraft-server.git"
 
@@ -51,46 +56,59 @@ THEMES = {
 
 SETTINGS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "settings.json")
 
+# ── Settings helpers ──────────────────────────────────────
 def load_settings():
     try:
-        with open(SETTINGS_FILE) as f: return json.load(f)
-    except: return {}
+        with open(SETTINGS_FILE) as f:
+            return json.load(f)
+    except:
+        return {}
 
 def save_settings(data):
     try:
-        with open(SETTINGS_FILE, "w") as f: json.dump(data, f, indent=2)
-    except: pass
+        with open(SETTINGS_FILE, "w") as f:
+            json.dump(data, f, indent=2)
+    except:
+        pass
 
-settings             = load_settings()
-current_theme_name   = settings.get("theme", "Dark (Default)")
-show_chat            = settings.get("show_chat", True)
-log_left             = settings.get("log_left", False)
-show_perf            = settings.get("show_perf", True)
-fullscreen           = settings.get("fullscreen", False)
-auto_upload          = settings.get("auto_upload", False)
-auto_upload_mins     = settings.get("auto_upload_mins", 10)
-upload_on_stop       = settings.get("upload_on_stop", True)
-T                    = THEMES[current_theme_name]
+def update_setting(key, value):
+    """Load -> patch one key -> save. Avoids clobbering concurrent writes."""
+    s = load_settings()
+    s[key] = value
+    save_settings(s)
+
+settings           = load_settings()
+is_first_launch    = "theme" not in settings   # True when settings.json is brand-new / empty
+current_theme_name = settings.get("theme", "Dark (Default)")
+show_chat          = settings.get("show_chat", True)
+log_left           = settings.get("log_left", False)
+show_perf          = settings.get("show_perf", True)
+fullscreen         = settings.get("fullscreen", False)
+auto_upload        = settings.get("auto_upload", False)
+auto_upload_mins   = settings.get("auto_upload_mins", 10)
+upload_on_stop     = settings.get("upload_on_stop", True)
+ram_display_mode   = settings.get("ram_display_mode", "percent")
+T                  = THEMES[current_theme_name]
 
 ctk.set_appearance_mode(T["appearance"])
 ctk.set_default_color_theme("dark-blue")
 
-server_proc    = None
-server_stdin   = None
-server_pid     = None
-perf_running   = False
-server_ready   = False
-player_count   = 0
-online_players = {}
+server_proc       = None
+server_stdin      = None
+server_pid        = None
+perf_running      = False
+server_ready      = False
+player_count      = 0
+online_players    = {}
 auto_upload_timer = None
-log_history    = ""
-chat_history   = ""
+log_history       = ""
+chat_history      = ""
 
 perf = {
-    "ram_used": "—", "ram_pct": "—", "ram_srv": "—",
-    "cpu_sys":  "—", "cpu_srv": "—",
-    "tps":      "—", "latency": "—", "players": "0",
-    "uptime":   "—", "threads": "—",
+    "ram_used":"--","ram_pct":"--","ram_srv":"--",
+    "cpu_sys":"--","cpu_srv":"--",
+    "tps":"--","latency":"--","players":"0",
+    "uptime":"--","threads":"--",
 }
 server_start_time = None
 
@@ -105,44 +123,56 @@ SPARK_TPS  = re.compile(r'TPS from last 1m, 5m, 15m: ([\d.]+)', re.IGNORECASE)
 TPS_RE2    = re.compile(r'Current TPS[:\s]+([\d.]+)', re.IGNORECASE)
 PLAYER_RE  = re.compile(r'There are (\d+) of a max of \d+ players', re.IGNORECASE)
 LIST_RE    = re.compile(r'There are (\d+)/\d+ players', re.IGNORECASE)
-LATENCY_RE = re.compile(r'Average latency.*?(\d+)', re.IGNORECASE)
+LATENCY_RE = re.compile(r'(\w+) has (\d+)ms', re.IGNORECASE)
 
 def parse_server_line(raw):
     global player_count, server_ready
     clean = STRIP_RE.sub('', raw).strip()
-    if not clean: return None
+    if not clean:
+        return None
     if DONE_RE.search(clean):
         server_ready = True
+        app.after(0, show_toast, "Server is ready!", T["start"])
         return ('log', clean)
     tps = SPARK_TPS.search(clean) or TPS_RE2.search(clean)
-    if tps: perf["tps"] = tps.group(1); return None
-    lat = LATENCY_RE.search(clean)
-    if lat: perf["latency"] = f"{lat.group(1)} ms"; return None
+    if tps:
+        perf["tps"] = tps.group(1)
+        return None
+    lat_matches = LATENCY_RE.findall(clean)
+    if lat_matches:
+        pings = [int(p) for _, p in lat_matches]
+        perf["latency"] = f"{sum(pings)//len(pings)} ms"
+        return None
     pl = PLAYER_RE.search(clean) or LIST_RE.search(clean)
     if pl:
-        player_count = int(pl.group(1)); perf["players"] = str(player_count)
+        player_count = int(pl.group(1))
+        perf["players"] = str(player_count)
         return None
     chat = CHAT_RE.search(clean)
-    if chat: return ('chat', f"💬 {chat.group(1)}: {chat.group(2)}")
+    if chat:
+        return ('chat', f"[CHAT] {chat.group(1)}: {chat.group(2)}")
     join = JOIN_RE.search(clean)
     if join:
         name = join.group(1)
-        player_count += 1; perf["players"] = str(player_count)
+        player_count += 1
+        perf["players"] = str(player_count)
         online_players[name] = datetime.now().strftime("%H:%M")
-        return ('event', f"→ {name} joined")
+        return ('event', f"-> {name} joined")
     leave = LEAVE_RE.search(clean)
     if leave:
         name = leave.group(1)
-        player_count = max(0, player_count-1); perf["players"] = str(player_count)
+        player_count = max(0, player_count - 1)
+        perf["players"] = str(player_count)
         online_players.pop(name, None)
-        return ('event', f"← {name} left")
-    if DEATH_RE.search(clean): return ('event', f"💀 {clean}")
+        return ('event', f"<- {name} left")
+    if DEATH_RE.search(clean):
+        return ('event', f"[DEATH] {clean}")
     return ('log', clean)
 
-# ── App ───────────────────────────────────────────────────
+# ── App window ────────────────────────────────────────────
 app = ctk.CTk()
 app.title("MC Server Controller")
-app.geometry("900x680")
+app.geometry("920x700")
 app.resizable(True, True)
 app.configure(fg_color=T["bg"])
 
@@ -150,12 +180,13 @@ ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID('gamermahir07.mcse
 try:
     ico = os.path.join(os.path.dirname(os.path.abspath(__file__)), "icon.ico")
     app.iconbitmap(ico)
-except: pass
+except:
+    pass
 
 if fullscreen:
     app.after(100, lambda: app.attributes("-fullscreen", True))
 
-# ── Helpers ───────────────────────────────────────────────
+# ── Core helpers ──────────────────────────────────────────
 def log(msg):
     ts = datetime.now().strftime("%H:%M:%S")
     try:
@@ -163,135 +194,224 @@ def log(msg):
         log_box.insert("end", f"[{ts}]  {msg}\n")
         log_box.configure(state="disabled")
         log_box.see("end")
-    except: pass
+    except:
+        pass
 
 def log_chat(msg):
-    if not show_chat: return
+    if not show_chat:
+        return
     ts = datetime.now().strftime("%H:%M:%S")
     try:
         chat_box.configure(state="normal")
         chat_box.insert("end", f"[{ts}]  {msg}\n")
         chat_box.configure(state="disabled")
         chat_box.see("end")
-    except: pass
+    except:
+        pass
 
 def set_status(txt, color):
-    try: status_lbl.configure(text=txt); status_dot.configure(text_color=color)
-    except: pass
+    try:
+        status_lbl.configure(text=txt)
+        status_dot.configure(text_color=color)
+    except:
+        pass
 
 def send_command():
     cmd = cmd_entry.get().strip()
-    if not cmd: return
+    if not cmd:
+        return
     cmd_entry.delete(0, "end")
     if server_stdin is None:
-        log("Server not running — start it first."); return
+        log("Server not running - start it first.")
+        return
     try:
-        server_stdin.write(cmd+"\n"); server_stdin.flush(); log(f"→ {cmd}")
-    except Exception as ex: log(f"Failed: {ex}")
+        server_stdin.write(cmd + "\n")
+        server_stdin.flush()
+        log(f"-> {cmd}")
+    except Exception as ex:
+        log(f"Failed: {ex}")
 
 def send_server_cmd(cmd):
     if server_stdin:
-        try: server_stdin.write(cmd+"\n"); server_stdin.flush(); log(f"→ {cmd}")
-        except: pass
-    else: log("Server not running.")
+        try:
+            server_stdin.write(cmd + "\n")
+            server_stdin.flush()
+            log(f"-> {cmd}")
+        except:
+            pass
+    else:
+        log("Server not running.")
 
 def run_cmd(cmd, cwd=None):
     log(f"$ {cmd}")
     try:
-        proc = subprocess.run(cmd, shell=True, cwd=cwd, capture_output=True,
-                              text=True, creationflags=CREATE_NO_WINDOW)
-        for l in proc.stdout.strip().splitlines(): log(f"  {l}")
-        if proc.returncode != 0:
-            for l in proc.stderr.strip().splitlines(): log(f"  {l}")
-        return proc.returncode == 0
+        p = subprocess.run(cmd, shell=True, cwd=cwd, capture_output=True,
+                           text=True, creationflags=CREATE_NO_WINDOW)
+        for line in p.stdout.strip().splitlines():
+            log(f"  {line}")
+        if p.returncode != 0:
+            for line in p.stderr.strip().splitlines():
+                log(f"  {line}")
+        return p.returncode == 0
     except Exception as ex:
-        log(str(ex)); return False
+        log(str(ex))
+        return False
 
 def set_all_buttons(state):
     for b in [btn_start, btn_stop, btn_sync]:
-        try: b.configure(state=state)
-        except: pass
+        try:
+            b.configure(state=state)
+        except:
+            pass
+
+def copy_log_to_clipboard():
+    """Copy entire activity log to clipboard and show a toast."""
+    try:
+        content = log_box.get("1.0", "end")
+        app.clipboard_clear()
+        app.clipboard_append(content)
+        show_toast("Log copied to clipboard!", T["sync"])
+    except:
+        pass
 
 def read_server_output(proc):
     for raw in iter(proc.stdout.readline, ''):
-        if not raw: break
+        if not raw:
+            break
         parsed = parse_server_line(raw)
-        if parsed is None: continue
+        if parsed is None:
+            continue
         cat, text = parsed
-        if cat in ('chat','event'): app.after(0, log_chat, text)
-        else: app.after(0, log, text)
+        if cat in ('chat', 'event'):
+            app.after(0, log_chat, text)
+        else:
+            app.after(0, log, text)
+
+# ── Toast notification ────────────────────────────────────
+_toast_win = None
+
+def show_toast(msg, color=None, duration_ms=3000):
+    """Floating notification that auto-dismisses after duration_ms."""
+    global _toast_win
+    if color is None:
+        color = T["sync"]
+    try:
+        if _toast_win and _toast_win.winfo_exists():
+            _toast_win.destroy()
+    except:
+        pass
+    toast = ctk.CTkToplevel(app)
+    toast.overrideredirect(True)
+    toast.attributes("-topmost", True)
+    toast.configure(fg_color=T["card"])
+    _toast_win = toast
+    frame = ctk.CTkFrame(toast, fg_color=T["card"],
+                         border_color=color, border_width=2, corner_radius=10)
+    frame.pack(padx=2, pady=2)
+    ctk.CTkLabel(frame, text=msg,
+                 font=ctk.CTkFont(size=13, weight="bold"),
+                 text_color=color).pack(padx=18, pady=12)
+    def _place():
+        try:
+            ax = app.winfo_x() + app.winfo_width() - 360
+            ay = app.winfo_y() + app.winfo_height() - 80
+            toast.geometry(f"+{ax}+{ay}")
+        except:
+            pass
+    app.after(10, _place)
+    app.after(duration_ms,
+              lambda: toast.destroy() if toast.winfo_exists() else None)
 
 # ── Auto upload ───────────────────────────────────────────
 def toggle_auto_upload():
     global auto_upload
     auto_upload = not auto_upload
-    s = load_settings(); s["auto_upload"] = auto_upload; save_settings(s)
-    if auto_upload: schedule_auto_upload()
+    update_setting("auto_upload", auto_upload)
+    if auto_upload:
+        schedule_auto_upload()
     else:
         if auto_upload_timer:
-            try: auto_upload_timer.cancel()
-            except: pass
+            try:
+                auto_upload_timer.cancel()
+            except:
+                pass
 
 def schedule_auto_upload():
     global auto_upload_timer
     if auto_upload_timer:
-        try: auto_upload_timer.cancel()
-        except: pass
-    if not auto_upload: return
+        try:
+            auto_upload_timer.cancel()
+        except:
+            pass
+    if not auto_upload:
+        return
     auto_upload_timer = threading.Timer(auto_upload_mins * 60, _do_auto_upload)
     auto_upload_timer.daemon = True
     auto_upload_timer.start()
 
 def _do_auto_upload():
-    if not auto_upload: return
-    try: path = e_path.get(); repo = e_repo.get()
-    except: path = SRV_PATH; repo = REPO_URL
-    def _upload():
-        app.after(0, log, "── Auto-upload ───────────────────")
+    """Periodic git push. Always reads from settings dict - never from UI widgets."""
+    if not auto_upload:
+        return
+    s    = load_settings()
+    path = s.get("srv_path", SRV_PATH)
+    repo = s.get("repo_url", REPO_URL)
+    def _work():
+        app.after(0, log, "-- Auto-upload -------------------")
         try:
             subprocess.run(f'git remote set-url origin {repo}', shell=True, cwd=path,
                            capture_output=True, creationflags=CREATE_NO_WINDOW)
             subprocess.run('git add .', shell=True, cwd=path,
                            capture_output=True, creationflags=CREATE_NO_WINDOW)
-            result = subprocess.run(
+            r = subprocess.run(
                 f'git commit -m "Auto-upload {datetime.now().strftime("%Y-%m-%d %H:%M")}"',
                 shell=True, cwd=path, capture_output=True, text=True,
                 creationflags=CREATE_NO_WINDOW)
-            if "nothing to commit" in result.stdout or result.returncode != 0:
+            if "nothing to commit" in r.stdout or r.returncode != 0:
                 app.after(0, log, "  Nothing new to commit.")
             else:
                 push = subprocess.run('git push origin main', shell=True, cwd=path,
                                       capture_output=True, text=True,
                                       creationflags=CREATE_NO_WINDOW)
-                app.after(0, log, "  Complete." if push.returncode == 0 else f"  Failed: {push.stderr.strip()}")
+                if push.returncode == 0:
+                    app.after(0, log, "  Auto-upload complete.")
+                    app.after(0, show_toast, "Auto-upload complete!", T["sync"])
+                else:
+                    app.after(0, log, f"  Push failed: {push.stderr.strip()}")
         except Exception as ex:
             app.after(0, log, f"  Error: {ex}")
         schedule_auto_upload()
-    threading.Thread(target=_upload, daemon=True).start()
+    threading.Thread(target=_work, daemon=True).start()
 
-# ── Perf ──────────────────────────────────────────────────
+# ── Perf polling ──────────────────────────────────────────
 perf_labels = {}
 
 def find_java_proc():
-    for proc in psutil.process_iter(['pid','name','cmdline']):
+    for p in psutil.process_iter(['pid', 'name', 'cmdline']):
         try:
-            if proc.info['name'] and 'java' in proc.info['name'].lower():
-                if 'server.jar' in ' '.join(proc.info['cmdline'] or []):
-                    return proc
-        except (psutil.NoSuchProcess, psutil.AccessDenied): pass
+            if p.info['name'] and 'java' in p.info['name'].lower():
+                if 'server.jar' in ' '.join(p.info['cmdline'] or []):
+                    return p
+        except:
+            pass
     return None
 
 def perf_loop():
     global perf_running
     perf_running = True
-    java_proc = None; poll_tick = 0
+    java_proc = None
+    tick = 0
     while perf_running:
         try:
             vm = psutil.virtual_memory()
-            perf["ram_used"] = f"{vm.used/1024**3:.1f} GB"
-            perf["ram_pct"]  = f"{vm.percent:.0f}%"
-            perf["cpu_sys"]  = f"{psutil.cpu_percent(interval=None):.0f}%"
-            if java_proc is None: java_proc = find_java_proc()
+            if ram_display_mode == "fraction":
+                perf["ram_used"] = f"{vm.used/1024**3:.1f}/{vm.total/1024**3:.0f}GB"
+            else:
+                perf["ram_used"] = f"{vm.used/1024**3:.1f} GB"
+            perf["ram_pct"] = f"{vm.percent:.0f}%"
+            perf["cpu_sys"] = f"{psutil.cpu_percent(interval=None):.0f}%"
+            if java_proc is None:
+                java_proc = find_java_proc()
             if java_proc:
                 try:
                     perf["ram_srv"] = f"{java_proc.memory_info().rss/1024**2:.0f} MB"
@@ -299,119 +419,297 @@ def perf_loop():
                     perf["threads"] = str(java_proc.num_threads())
                 except (psutil.NoSuchProcess, psutil.AccessDenied):
                     java_proc = None
-                    perf["ram_srv"] = perf["cpu_srv"] = perf["threads"] = "—"
+                    perf["ram_srv"] = perf["cpu_srv"] = perf["threads"] = "--"
             else:
-                perf["ram_srv"] = perf["cpu_srv"] = perf["threads"] = "—"
+                perf["ram_srv"] = perf["cpu_srv"] = perf["threads"] = "--"
             if server_start_time:
-                secs = int((datetime.now()-server_start_time).total_seconds())
-                h,r = divmod(secs,3600); m,s = divmod(r,60)
-                perf["uptime"] = f"{h:02d}:{m:02d}:{s:02d}"
-            else: perf["uptime"] = "—"
+                elapsed = int((datetime.now() - server_start_time).total_seconds())
+                h, r = divmod(elapsed, 3600)
+                m, sc = divmod(r, 60)
+                perf["uptime"] = f"{h:02d}:{m:02d}:{sc:02d}"
+            else:
+                perf["uptime"] = "--"
             if server_ready and server_stdin:
                 try:
-                    if poll_tick % 5  == 0: server_stdin.write("tps\n");  server_stdin.flush()
-                    if poll_tick % 10 == 0: server_stdin.write("ping\n"); server_stdin.flush()
-                    if poll_tick % 15 == 0: server_stdin.write("list\n"); server_stdin.flush()
-                except: pass
-            poll_tick += 1
+                    if tick % 5 == 0:
+                        server_stdin.write("tps\n"); server_stdin.flush()
+                    if tick % 15 == 0:
+                        server_stdin.write("list\n"); server_stdin.flush()
+                except:
+                    pass
+            tick += 1
             app.after(0, update_perf_labels)
-        except: pass
-        import time; time.sleep(2)
+        except:
+            pass
+        time.sleep(2)
 
 def update_perf_labels():
     for key, lbl in perf_labels.items():
         try:
             val = perf[key]
             if key == "tps":
-                try: t=float(val); color=T["start"] if t>=18 else T["handoff"] if t>=15 else T["stop"]
-                except: color=T["text"]
-                lbl.configure(text=val, text_color=color)
-            elif key in ("cpu_sys","cpu_srv","ram_pct"):
-                try: n=float(str(val).replace("%","")); color=T["start"] if n<60 else T["handoff"] if n<85 else T["stop"]
-                except: color=T["text"]
-                lbl.configure(text=val, text_color=color)
+                try:
+                    t = float(val)
+                    c = T["start"] if t >= 18 else T["handoff"] if t >= 15 else T["stop"]
+                except:
+                    c = T["text"]
+                lbl.configure(text=val, text_color=c)
+            elif key in ("cpu_sys", "cpu_srv", "ram_pct"):
+                try:
+                    n = float(str(val).replace("%", ""))
+                    c = T["start"] if n < 60 else T["handoff"] if n < 85 else T["stop"]
+                except:
+                    c = T["text"]
+                lbl.configure(text=val, text_color=c)
             elif key == "latency":
-                try: n=float(str(val).replace("ms","").strip()); color=T["start"] if n<60 else T["handoff"] if n<120 else T["stop"]
-                except: color=T["text"]
-                lbl.configure(text=val, text_color=color)
+                try:
+                    n = float(str(val).replace("ms", "").strip())
+                    c = T["start"] if n < 60 else T["handoff"] if n < 120 else T["stop"]
+                except:
+                    c = T["text"]
+                lbl.configure(text=val, text_color=c)
             else:
                 lbl.configure(text=val, text_color=T["text"])
-        except: pass
+        except:
+            pass
 
 # ── Theme / layout ────────────────────────────────────────
 def apply_theme(name):
     global T, current_theme_name
-    current_theme_name = name; T = THEMES[name]
-    s = load_settings(); s["theme"] = name; save_settings(s)
+    current_theme_name = name
+    T = THEMES[name]
+    update_setting("theme", name)
     ctk.set_appearance_mode(T["appearance"])
     app.configure(fg_color=T["bg"])
     rebuild_ui()
 
 def rebuild_ui():
     global log_history, chat_history
-    try: log_history  = log_box.get("1.0","end")
-    except: pass
-    try: chat_history = chat_box.get("1.0","end")
-    except: pass
-    for w in app.winfo_children(): w.destroy()
+    try:
+        log_history = log_box.get("1.0", "end")
+    except:
+        pass
+    try:
+        chat_history = chat_box.get("1.0", "end")
+    except:
+        pass
+    for w in app.winfo_children():
+        w.destroy()
     build_ui()
 
 def swap_layout():
     global log_left
     log_left = not log_left
-    s = load_settings(); s["log_left"] = log_left; save_settings(s)
+    update_setting("log_left", log_left)
     rebuild_ui()
 
 def toggle_fullscreen():
     global fullscreen
     fullscreen = not fullscreen
-    s = load_settings(); s["fullscreen"] = fullscreen; save_settings(s)
+    update_setting("fullscreen", fullscreen)
     app.attributes("-fullscreen", fullscreen)
-    if not fullscreen: app.geometry("900x680")
+    if not fullscreen:
+        app.geometry("920x700")
     rebuild_ui()
 
 def toggle_perf():
     global show_perf
     show_perf = not show_perf
-    s = load_settings(); s["show_perf"] = show_perf; save_settings(s)
+    update_setting("show_perf", show_perf)
     rebuild_ui()
 
 def toggle_chat():
     global show_chat
     show_chat = not show_chat
-    s = load_settings(); s["show_chat"] = show_chat; save_settings(s)
+    update_setting("show_chat", show_chat)
     chat_toggle_btn.configure(text="Hide" if show_chat else "Show")
     if show_chat:
         chat_box.configure(height=110)
-        chat_box.pack(fill="x", padx=8, pady=(4,8))
+        chat_box.pack(fill="x", padx=8, pady=(4, 8))
     else:
-        chat_box.pack_forget(); chat_box.configure(height=0)
+        chat_box.pack_forget()
+        chat_box.configure(height=0)
 
-# ── Build UI ──────────────────────────────────────────────
+# ── First-Launch Onboarding Dialog ────────────────────────
+def show_first_launch_dialog():
+    """
+    Modal shown only on first run (or when user clicks 'Re-open Setup').
+    Lets the user pick a theme and configure GitHub upload preferences.
+    """
+    global auto_upload, upload_on_stop, current_theme_name, T
+
+    dlg = ctk.CTkToplevel(app)
+    dlg.title("Welcome - First-Launch Setup")
+    dlg.geometry("640x700")
+    dlg.resizable(False, False)
+    dlg.configure(fg_color="#0d0d0d")
+    dlg.grab_set()
+    dlg.attributes("-topmost", True)
+
+    def _center():
+        try:
+            ax = app.winfo_x() + (app.winfo_width()  - 640) // 2
+            ay = app.winfo_y() + (app.winfo_height() - 700) // 2
+            dlg.geometry(f"640x700+{ax}+{ay}")
+        except:
+            pass
+    app.after(50, _center)
+
+    outer = ctk.CTkScrollableFrame(dlg, fg_color="transparent")
+    outer.pack(fill="both", expand=True)
+
+    # ------------------------------------------------------------------ READ ME!
+    banner = ctk.CTkFrame(outer, fg_color="#1a0000", corner_radius=0)
+    banner.pack(fill="x")
+
+    ctk.CTkLabel(
+        banner,
+        text="READ ME!",
+        font=ctk.CTkFont(size=40, weight="bold"),
+        text_color="#ff3333"
+    ).pack(pady=(22, 2))
+
+    ctk.CTkLabel(
+        banner,
+        text="First-time setup  |  takes about 30 seconds",
+        font=ctk.CTkFont(size=13),
+        text_color="#ff8888"
+    ).pack(pady=(0, 22))
+
+    # ------------------------------------------------------------------ helper
+    def card(title, icon=""):
+        f = ctk.CTkFrame(outer, fg_color="#1a1a1a",
+                         border_color="#2a2a2a", border_width=1, corner_radius=10)
+        f.pack(fill="x", padx=20, pady=(12, 0))
+        ctk.CTkLabel(f, text=f"{icon}  {title}",
+                     font=ctk.CTkFont(size=14, weight="bold"),
+                     text_color="#e0e0e0").pack(anchor="w", padx=16, pady=(14, 6))
+        ctk.CTkFrame(f, height=1, fg_color="#333333").pack(fill="x", padx=16)
+        body = ctk.CTkFrame(f, fg_color="transparent")
+        body.pack(fill="x", padx=16, pady=(10, 14))
+        return body
+
+    # ------------------------------------------------------------------ 1. Theme
+    b1 = card("Choose Your Theme", "Appearance")
+
+    ctk.CTkLabel(b1,
+                 text="Pick a colour scheme. You can change it any time in the Settings tab.",
+                 font=ctk.CTkFont(size=12), text_color="#888888",
+                 wraplength=560, justify="left").pack(anchor="w")
+
+    theme_var = ctk.StringVar(value=current_theme_name)
+
+    def _preview(name):
+        global T, current_theme_name
+        current_theme_name = name
+        T = THEMES[name]
+        ctk.set_appearance_mode(T["appearance"])
+
+    ctk.CTkOptionMenu(
+        b1, values=list(THEMES.keys()),
+        variable=theme_var,
+        command=_preview,
+        font=ctk.CTkFont(size=12), width=300,
+        fg_color="#111111", button_color="#333333",
+        button_hover_color="#444444", text_color="#e0e0e0",
+        dropdown_fg_color="#1a1a1a", dropdown_text_color="#e0e0e0",
+        dropdown_hover_color="#2a2a2a"
+    ).pack(anchor="w", pady=(10, 0))
+
+    # ------------------------------------------------------------------ 2. GitHub
+    b2 = card("GitHub World Backup", "Cloud")
+
+    ctk.CTkLabel(b2,
+                 text=(
+                     "This launcher can automatically back up your Minecraft world\n"
+                     "to a GitHub repository so it is never lost.\n\n"
+                     "How each option works:\n\n"
+                     "  Upload on Stop  ->  when you press Stop Server, the world folders\n"
+                     "  (world/, world_nether/, world_the_end/) are committed and pushed\n"
+                     "  to your repo automatically.\n\n"
+                     "  Auto-Upload  ->  a background timer runs a git push every N minutes\n"
+                     "  while the server is running. The interval is set in Settings.\n\n"
+                     "  Manual Sync  ->  the 'Sync & Upload' button lets you push any time.\n\n"
+                     "  If you do NOT want any files sent to GitHub or any other website,\n"
+                     "  leave BOTH toggles OFF. Nothing will ever be pushed unless you\n"
+                     "  explicitly enable one of these options or press Sync yourself."
+                 ),
+                 font=ctk.CTkFont(size=12), text_color="#aaaaaa",
+                 wraplength=560, justify="left").pack(anchor="w")
+
+    ctk.CTkFrame(b2, height=10, fg_color="transparent").pack()
+
+    up_stop_var = ctk.BooleanVar(value=upload_on_stop)
+    up_auto_var = ctk.BooleanVar(value=auto_upload)
+
+    def toggle_row(parent, label, var):
+        r = ctk.CTkFrame(parent, fg_color="transparent")
+        r.pack(fill="x", pady=4)
+        ctk.CTkLabel(r, text=label, font=ctk.CTkFont(size=12),
+                     text_color="#dddddd").pack(side="left")
+        ctk.CTkSwitch(r, text="", variable=var,
+                      button_color="#60a5fa",
+                      progress_color="#60a5fa").pack(side="right")
+
+    toggle_row(b2, "Upload world to GitHub when server stops", up_stop_var)
+    toggle_row(b2, "Enable timed auto-upload while server is running", up_auto_var)
+
+    ctk.CTkLabel(b2,
+                 text="Repo URL, Java path, and upload interval can be configured in Settings.",
+                 font=ctk.CTkFont(size=10), text_color="#555555").pack(anchor="w", pady=(8, 0))
+
+    # ------------------------------------------------------------------ Confirm
+    ctk.CTkFrame(outer, height=12, fg_color="transparent").pack()
+
+    def _confirm():
+        global auto_upload, upload_on_stop, current_theme_name, T
+        chosen           = theme_var.get()
+        current_theme_name = chosen
+        T                = THEMES[chosen]
+        auto_upload      = up_auto_var.get()
+        upload_on_stop   = up_stop_var.get()
+        s = load_settings()
+        s["theme"]            = chosen
+        s["auto_upload"]      = auto_upload
+        s["upload_on_stop"]   = upload_on_stop
+        s["first_launch_done"]= True
+        save_settings(s)
+        ctk.set_appearance_mode(T["appearance"])
+        dlg.destroy()
+        rebuild_ui()
+        if auto_upload:
+            schedule_auto_upload()
+
+    ctk.CTkButton(
+        outer,
+        text="Got it - Let's go!",
+        font=ctk.CTkFont(size=15, weight="bold"),
+        height=48, corner_radius=10,
+        fg_color="#22c55e", hover_color="#16a34a",
+        text_color="#000000",
+        command=_confirm
+    ).pack(padx=20, pady=(0, 24), fill="x")
+
+# ── UI ────────────────────────────────────────────────────
 def build_ui():
     global status_dot, status_lbl, e_path, e_repo, e_java
     global btn_start, btn_stop, btn_sync
-    global log_box, chat_box, cmd_entry, chat_toggle_btn
 
     is_fs = app.attributes("-fullscreen")
 
-    # ── Top bar ───────────────────────────────────────────
     top = ctk.CTkFrame(app, fg_color=T["card"], corner_radius=0)
     top.pack(fill="x")
-    ctk.CTkLabel(top, text="⛏  MC Server Controller",
+    ctk.CTkLabel(top, text="MC Server Controller",
                  font=ctk.CTkFont(size=16, weight="bold"),
                  text_color=T["text"]).pack(side="left", padx=16, pady=10)
-    status_dot = ctk.CTkLabel(top, text="●", font=ctk.CTkFont(size=13), text_color=T["stop"])
-    status_dot.pack(side="right", padx=(0,12), pady=10)
+    status_dot = ctk.CTkLabel(top, text="*", font=ctk.CTkFont(size=13), text_color=T["stop"])
+    status_dot.pack(side="right", padx=(0, 14), pady=10)
     status_lbl = ctk.CTkLabel(top, text="Stopped", font=ctk.CTkFont(size=12), text_color=T["muted"])
-    status_lbl.pack(side="right", padx=(0,4), pady=10)
+    status_lbl.pack(side="right", padx=(0, 4), pady=10)
 
-    # ── Tab bar ───────────────────────────────────────────
     tab_bar = ctk.CTkFrame(app, fg_color=T["card"], corner_radius=0,
                            border_color=T["border"], border_width=1)
     tab_bar.pack(fill="x")
-
-    active_tab = ctk.StringVar(value="dashboard")
 
     tab_content = ctk.CTkFrame(app, fg_color="transparent")
     tab_content.pack(fill="both", expand=True)
@@ -420,40 +718,31 @@ def build_ui():
     settings_frame  = ctk.CTkFrame(tab_content, fg_color="transparent")
 
     def show_tab(name):
-        active_tab.set(name)
+        dashboard_frame.pack_forget()
+        settings_frame.pack_forget()
+        tab_dash.configure(fg_color="transparent", text_color=T["muted"])
+        tab_sett.configure(fg_color="transparent", text_color=T["muted"])
         if name == "dashboard":
-            settings_frame.pack_forget()
             dashboard_frame.pack(fill="both", expand=True)
             tab_dash.configure(fg_color=T["sync"], text_color="#000")
-            tab_sett.configure(fg_color="transparent", text_color=T["muted"])
         else:
-            dashboard_frame.pack_forget()
             settings_frame.pack(fill="both", expand=True)
             tab_sett.configure(fg_color=T["sync"], text_color="#000")
-            tab_dash.configure(fg_color="transparent", text_color=T["muted"])
 
-    tab_dash = ctk.CTkButton(tab_bar, text="Dashboard", width=110, height=30,
-                             font=ctk.CTkFont(size=12), corner_radius=0,
+    tab_dash = ctk.CTkButton(tab_bar, text="Dashboard", width=120, height=30,
+                             font=ctk.CTkFont(size=12), corner_radius=6,
                              fg_color=T["sync"], text_color="#000",
                              hover_color=T["sync"], command=lambda: show_tab("dashboard"))
-    tab_dash.pack(side="left", padx=(8,2), pady=6)
+    tab_dash.pack(side="left", padx=(8, 2), pady=6)
 
-    tab_sett = ctk.CTkButton(tab_bar, text="⚙ Settings", width=110, height=30,
-                             font=ctk.CTkFont(size=12), corner_radius=0,
+    tab_sett = ctk.CTkButton(tab_bar, text="Settings", width=120, height=30,
+                             font=ctk.CTkFont(size=12), corner_radius=6,
                              fg_color="transparent", text_color=T["muted"],
                              hover_color=T["border"], command=lambda: show_tab("settings"))
     tab_sett.pack(side="left", padx=2, pady=6)
 
-    # ══════════════════════════════════════════════════════
-    # DASHBOARD TAB
-    # ══════════════════════════════════════════════════════
     build_dashboard(dashboard_frame, is_fs)
-
-    # ══════════════════════════════════════════════════════
-    # SETTINGS TAB
-    # ══════════════════════════════════════════════════════
     build_settings_tab(settings_frame)
-
     dashboard_frame.pack(fill="both", expand=True)
 
 # ── Dashboard ─────────────────────────────────────────────
@@ -464,7 +753,6 @@ def build_dashboard(parent, is_fs):
     if not is_fs:
         scroll = ctk.CTkScrollableFrame(parent, fg_color="transparent")
         scroll.pack(fill="both", expand=True)
-        scroll.columnconfigure(0, weight=1)
         container = scroll
     else:
         container = ctk.CTkFrame(parent, fg_color="transparent")
@@ -475,68 +763,122 @@ def build_dashboard(parent, is_fs):
     ctrl_col = 1 if log_left else 0
     log_col  = 0 if log_left else 1
     body.columnconfigure(ctrl_col, weight=0, minsize=340)
-    body.columnconfigure(log_col,  weight=1)
+    body.columnconfigure(log_col, weight=1)
     body.rowconfigure(0, weight=1)
 
-    # ── Controls ──────────────────────────────────────────
+    # Left controls
     left = ctk.CTkFrame(body, fg_color="transparent")
-    left.grid(row=0, column=ctrl_col, sticky="nsew", padx=(10,0) if log_left else (0,10))
+    left.grid(row=0, column=ctrl_col, sticky="nsew",
+              padx=(10, 0) if log_left else (0, 10))
 
     def make_btn(parent, text, desc, color, cmd):
         f = ctk.CTkFrame(parent, fg_color=T["card"], border_color=T["border"],
                          border_width=1, corner_radius=10)
         f.pack(fill="x", pady=3)
         inner = ctk.CTkFrame(f, fg_color="transparent")
-        inner.pack(fill="x", padx=12, pady=6)
-        ctk.CTkLabel(inner, text=text, font=ctk.CTkFont(size=12, weight="bold"),
-                     text_color=color, anchor="w").pack(anchor="w")
-        ctk.CTkLabel(inner, text=desc, font=ctk.CTkFont(size=10), text_color=T["muted"],
-                     anchor="w", wraplength=280, justify="left").pack(anchor="w")
-        b = ctk.CTkButton(inner, text="Run", width=56, height=22,
+        inner.pack(fill="x", padx=12, pady=8)
+        top_r = ctk.CTkFrame(inner, fg_color="transparent")
+        top_r.pack(fill="x")
+        ctk.CTkLabel(top_r, text=text, font=ctk.CTkFont(size=12, weight="bold"),
+                     text_color=color, anchor="w").pack(side="left")
+        b = ctk.CTkButton(top_r, text="Run", width=64, height=26,
                           font=ctk.CTkFont(size=11), fg_color=color,
                           hover_color=color, text_color="#000", command=cmd)
-        b.pack(anchor="e", pady=(4,0))
+        b.pack(side="right")
+        ctk.CTkLabel(inner, text=desc, font=ctk.CTkFont(size=10),
+                     text_color=T["muted"], anchor="w",
+                     wraplength=280, justify="left").pack(anchor="w", pady=(2, 0))
         return b
 
-    btn_start = make_btn(left, "▶  Start Server",  "Git pull → launch with Aikar JVM flags",    T["start"], lambda: threading.Thread(target=start_server, daemon=True).start())
-    btn_stop  = make_btn(left, "■  Stop Server",   "Kill Java process → push world to GitHub",  T["stop"],  lambda: threading.Thread(target=stop_server,  daemon=True).start())
-    btn_sync  = make_btn(left, "↑  Sync & Upload", "Git add all → commit 'Manual Sync' → push", T["sync"],  lambda: threading.Thread(target=sync_git,     daemon=True).start())
-    btn_handoff = None
+    btn_start = make_btn(left, "Start Server",  "Git pull -> launch with Aikar JVM flags",    T["start"], lambda: threading.Thread(target=start_server, daemon=True).start())
+    btn_stop  = make_btn(left, "Stop Server",   "Kill Java process -> push world to GitHub",  T["stop"],  lambda: threading.Thread(target=stop_server,  daemon=True).start())
+    btn_sync  = make_btn(left, "Sync & Upload", "Git add all -> commit Manual Sync -> push",  T["sync"],  lambda: threading.Thread(target=sync_git,     daemon=True).start())
 
-    # ── Log panel ─────────────────────────────────────────
+    # Quick Commands panel (NEW)
+    qf = ctk.CTkFrame(left, fg_color=T["card"], border_color=T["border"],
+                      border_width=1, corner_radius=10)
+    qf.pack(fill="x", pady=(8, 3))
+    ctk.CTkLabel(qf, text="QUICK COMMANDS",
+                 font=ctk.CTkFont(size=10), text_color=T["muted"]).pack(anchor="w", padx=12, pady=(8, 4))
+    ctk.CTkFrame(qf, height=1, fg_color=T["border"]).pack(fill="x", padx=12)
+    qgrid = ctk.CTkFrame(qf, fg_color="transparent")
+    qgrid.pack(fill="x", padx=10, pady=8)
+
+    QUICK_CMDS = [
+        ("Save World",     "save-all",           T["sync"]),
+        ("Player List",    "list",                T["sync"]),
+        ("Check TPS",      "tps",                 T["sync"]),
+        ("Set Day",        "time set day",        T["handoff"]),
+        ("Set Night",      "time set night",      T["handoff"]),
+        ("Clear Weather",  "weather clear",       T["handoff"]),
+        ("Hard Mode",      "difficulty hard",     T["stop"]),
+        ("Peaceful Mode",  "difficulty peaceful", T["start"]),
+        ("Safe Stop",      "stop",                T["stop"]),
+        ("Reload Plugins", "reload",              T["muted"]),
+    ]
+    cols = 2
+    for i, (label, cmd_txt, color) in enumerate(QUICK_CMDS):
+        ri = i // cols
+        ci = i % cols
+        ctk.CTkButton(
+            qgrid, text=label, width=140, height=26,
+            font=ctk.CTkFont(size=10), corner_radius=6,
+            fg_color="transparent", border_width=1,
+            border_color=T["border"], text_color=color,
+            hover_color=T["border"],
+            command=lambda c=cmd_txt: send_server_cmd(c)
+        ).grid(row=ri, column=ci, padx=3, pady=2, sticky="ew")
+        qgrid.columnconfigure(ci, weight=1)
+
+    # Right log panel
     right = ctk.CTkFrame(body, fg_color="transparent")
     right.grid(row=0, column=log_col, sticky="nsew")
-    right.rowconfigure(0, weight=1); right.rowconfigure(1, weight=0); right.rowconfigure(2, weight=0)
+    right.rowconfigure(0, weight=1)
+    right.rowconfigure(1, weight=0)
+    right.rowconfigure(2, weight=0)
     right.columnconfigure(0, weight=1)
 
-    lf = ctk.CTkFrame(right, fg_color=T["card"], border_color=T["border"], border_width=1)
-    lf.grid(row=0, column=0, sticky="nsew", pady=(0,6))
+    lf = ctk.CTkFrame(right, fg_color=T["card"], border_color=T["border"],
+                      border_width=1, corner_radius=10)
+    lf.grid(row=0, column=0, sticky="nsew", pady=(0, 6))
     lt = ctk.CTkFrame(lf, fg_color="transparent")
-    lt.pack(fill="x", padx=12, pady=(8,0))
-    ctk.CTkLabel(lt, text="ACTIVITY LOG", font=ctk.CTkFont(size=10), text_color=T["muted"]).pack(side="left")
-    ctk.CTkButton(lt, text="⇄ Swap", width=54, height=20, font=ctk.CTkFont(size=10),
+    lt.pack(fill="x", padx=12, pady=(8, 0))
+    ctk.CTkLabel(lt, text="ACTIVITY LOG", font=ctk.CTkFont(size=10),
+                 text_color=T["muted"]).pack(side="left")
+    ctk.CTkButton(lt, text="Swap", width=40, height=20, font=ctk.CTkFont(size=10),
                   fg_color="transparent", border_width=1, border_color=T["sync"],
                   text_color=T["sync"], hover_color=T["border"],
-                  command=swap_layout).pack(side="right", padx=(4,0))
+                  command=swap_layout).pack(side="right", padx=(4, 0))
+    # Copy Log button (new)
+    ctk.CTkButton(lt, text="Copy", width=44, height=20, font=ctk.CTkFont(size=10),
+                  fg_color="transparent", border_width=1, border_color=T["sync"],
+                  text_color=T["sync"], hover_color=T["border"],
+                  command=copy_log_to_clipboard).pack(side="right", padx=(0, 4))
     ctk.CTkButton(lt, text="Clear", width=44, height=20, font=ctk.CTkFont(size=10),
                   fg_color="transparent", border_width=1, border_color=T["border"],
                   text_color=T["muted"], hover_color=T["border"],
                   command=lambda: (log_box.configure(state="normal"),
-                                   log_box.delete("1.0","end"),
+                                   log_box.delete("1.0", "end"),
                                    log_box.configure(state="disabled"))
                   ).pack(side="right")
-    log_box = ctk.CTkTextbox(lf, font=ctk.CTkFont(size=11, family="Consolas"),
-                             wrap="word", state="disabled", fg_color="transparent", text_color=T["text"])
-    log_box.pack(fill="both", expand=True, padx=8, pady=(4,8))
-    if log_history.strip():
-        log_box.configure(state="normal"); log_box.insert("1.0", log_history)
-        log_box.configure(state="disabled"); log_box.see("end")
 
-    cf = ctk.CTkFrame(right, fg_color=T["card"], border_color=T["border"], border_width=1)
-    cf.grid(row=1, column=0, sticky="ew", pady=(0,6))
+    log_box = ctk.CTkTextbox(lf, font=ctk.CTkFont(size=11, family="Consolas"),
+                             wrap="word", state="disabled",
+                             fg_color="transparent", text_color=T["text"])
+    log_box.pack(fill="both", expand=True, padx=8, pady=(4, 8))
+    if log_history.strip():
+        log_box.configure(state="normal")
+        log_box.insert("1.0", log_history)
+        log_box.configure(state="disabled")
+        log_box.see("end")
+
+    cf = ctk.CTkFrame(right, fg_color=T["card"], border_color=T["border"],
+                      border_width=1, corner_radius=10)
+    cf.grid(row=1, column=0, sticky="ew", pady=(0, 6))
     ct = ctk.CTkFrame(cf, fg_color="transparent")
-    ct.pack(fill="x", padx=12, pady=(8,0))
-    ctk.CTkLabel(ct, text="SERVER CHAT & EVENTS", font=ctk.CTkFont(size=10), text_color=T["muted"]).pack(side="left")
+    ct.pack(fill="x", padx=12, pady=(8, 0))
+    ctk.CTkLabel(ct, text="SERVER CHAT & EVENTS", font=ctk.CTkFont(size=10),
+                 text_color=T["muted"]).pack(side="left")
     chat_toggle_btn = ctk.CTkButton(ct, text="Hide" if show_chat else "Show",
                                     width=44, height=20, font=ctk.CTkFont(size=10),
                                     fg_color="transparent", border_width=1,
@@ -547,36 +889,335 @@ def build_dashboard(parent, is_fs):
                   fg_color="transparent", border_width=1, border_color=T["border"],
                   text_color=T["muted"], hover_color=T["border"],
                   command=lambda: (chat_box.configure(state="normal"),
-                                   chat_box.delete("1.0","end"),
+                                   chat_box.delete("1.0", "end"),
                                    chat_box.configure(state="disabled"))
-                  ).pack(side="right", padx=(0,4))
+                  ).pack(side="right", padx=(0, 4))
     chat_box = ctk.CTkTextbox(cf, font=ctk.CTkFont(size=11, family="Consolas"),
                               wrap="word", state="disabled", fg_color="transparent",
                               text_color=T["text"], height=110 if show_chat else 0)
-    if show_chat: chat_box.pack(fill="x", padx=8, pady=(4,8))
+    if show_chat:
+        chat_box.pack(fill="x", padx=8, pady=(4, 8))
     if chat_history.strip():
-        chat_box.configure(state="normal"); chat_box.insert("1.0", chat_history)
-        chat_box.configure(state="disabled"); chat_box.see("end")
+        chat_box.configure(state="normal")
+        chat_box.insert("1.0", chat_history)
+        chat_box.configure(state="disabled")
+        chat_box.see("end")
 
-    cmdf = ctk.CTkFrame(right, fg_color=T["card"], border_color=T["border"], border_width=1)
+    cmdf = ctk.CTkFrame(right, fg_color=T["card"], border_color=T["border"],
+                        border_width=1, corner_radius=10)
     cmdf.grid(row=2, column=0, sticky="ew")
-    cmdf_i = ctk.CTkFrame(cmdf, fg_color="transparent")
-    cmdf_i.pack(fill="x", padx=12, pady=8)
-    ctk.CTkLabel(cmdf_i, text="/", font=ctk.CTkFont(size=14, weight="bold"),
+    ci = ctk.CTkFrame(cmdf, fg_color="transparent")
+    ci.pack(fill="x", padx=12, pady=8)
+    ctk.CTkLabel(ci, text="/", font=ctk.CTkFont(size=14, weight="bold"),
                  text_color=T["muted"], width=14).pack(side="left")
-    cmd_entry = ctk.CTkEntry(cmdf_i, font=ctk.CTkFont(size=12, family="Consolas"),
-                             fg_color=T["bg"], border_color=T["border"], text_color=T["text"],
-                             placeholder_text="type a command or chat message...", height=32)
-    cmd_entry.pack(side="left", fill="x", expand=True, padx=(4,8))
+    cmd_entry = ctk.CTkEntry(ci, font=ctk.CTkFont(size=12, family="Consolas"),
+                             fg_color=T["bg"], border_color=T["border"],
+                             text_color=T["text"],
+                             placeholder_text="command or chat message...", height=32)
+    cmd_entry.pack(side="left", fill="x", expand=True, padx=(4, 8))
     cmd_entry.bind("<Return>", lambda e: send_command())
-    ctk.CTkButton(cmdf_i, text="Send", width=60, height=32,
+    ctk.CTkButton(ci, text="Send", width=60, height=32,
                   font=ctk.CTkFont(size=12), fg_color=T["sync"],
                   hover_color=T["sync"], text_color="#000",
                   command=send_command).pack(side="left")
 
-    if show_perf: build_perf_panel(container, is_fs)
-    build_ip_panel(container, is_fs)
+    if show_perf:
+        build_perf_panel(container)
+    build_ip_panel(container)
     build_server_info_panel(container)
+
+# ── Perf panel ────────────────────────────────────────────
+def build_perf_panel(parent):
+    global perf_labels
+    perf_labels = {}
+    pf = ctk.CTkFrame(parent, fg_color=T["card"], border_color=T["border"],
+                      border_width=1, corner_radius=10)
+    pf.pack(fill="x", padx=20, pady=(0, 10))
+    ph = ctk.CTkFrame(pf, fg_color="transparent")
+    ph.pack(fill="x", padx=12, pady=(8, 4))
+    ctk.CTkLabel(ph, text="SERVER PERFORMANCE", font=ctk.CTkFont(size=10),
+                 text_color=T["muted"]).pack(side="left")
+    ctk.CTkLabel(ph, text="refresh 2s", font=ctk.CTkFont(size=10),
+                 text_color=T["muted"]).pack(side="right")
+    grid = ctk.CTkFrame(pf, fg_color="transparent")
+    grid.pack(fill="x", padx=12, pady=(0, 10))
+    stats = [
+        ("TPS","tps"),("Players","players"),("Latency","latency"),
+        ("Uptime","uptime"),("RAM Total","ram_used"),("RAM %","ram_pct"),
+        ("RAM Server","ram_srv"),("CPU Sys","cpu_sys"),
+        ("CPU Srv","cpu_srv"),("Threads","threads"),
+    ]
+    for i, (label, key) in enumerate(stats):
+        col = i % 5
+        row = i // 5
+        cell = ctk.CTkFrame(grid, fg_color=T["bg"], border_color=T["border"],
+                            border_width=1, corner_radius=8)
+        cell.grid(row=row, column=col, padx=4, pady=4, sticky="ew")
+        grid.columnconfigure(col, weight=1)
+        ctk.CTkLabel(cell, text=label, font=ctk.CTkFont(size=9),
+                     text_color=T["muted"]).pack(pady=(6, 0))
+        lbl = ctk.CTkLabel(cell, text=perf[key],
+                           font=ctk.CTkFont(size=13, weight="bold"),
+                           text_color=T["text"])
+        lbl.pack(pady=(0, 6))
+        perf_labels[key] = lbl
+
+# ── IP panel ──────────────────────────────────────────────
+def build_ip_panel(parent):
+    import socket, urllib.request
+    def get_local_ip():
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            s.connect(("8.8.8.8", 80))
+            ip = s.getsockname()[0]
+            s.close()
+            return ip
+        except:
+            return "127.0.0.1"
+    local_ip = get_local_ip()
+    port_val = settings.get("server_port", "25565")
+    pf = ctk.CTkFrame(parent, fg_color=T["card"], border_color=T["border"],
+                      border_width=1, corner_radius=10)
+    pf.pack(fill="x", padx=20, pady=(0, 10))
+    ph = ctk.CTkFrame(pf, fg_color="transparent")
+    ph.pack(fill="x", padx=12, pady=(8, 4))
+    ctk.CTkLabel(ph, text="SERVER IPs", font=ctk.CTkFont(size=10),
+                 text_color=T["muted"]).pack(side="left")
+    grid = ctk.CTkFrame(pf, fg_color="transparent")
+    grid.pack(fill="x", padx=12, pady=(0, 10))
+    grid.columnconfigure((0, 1, 2, 3, 4), weight=1)
+    port_var = ctk.StringVar(value=port_val)
+    def save_port(*_):
+        update_setting("server_port", port_var.get())
+    port_var.trace_add("write", save_port)
+    ext_ip_var = ctk.StringVar(value="fetching...")
+    def cell(col, title, fn):
+        c = ctk.CTkFrame(grid, fg_color=T["bg"], border_color=T["border"],
+                         border_width=1, corner_radius=8)
+        c.grid(row=0, column=col, padx=4, pady=4, sticky="ew")
+        ctk.CTkLabel(c, text=title, font=ctk.CTkFont(size=9),
+                     text_color=T["muted"]).pack(pady=(6, 2))
+        fn(c)
+    def port_fn(p):
+        ctk.CTkEntry(p, textvariable=port_var, width=70, height=24,
+                     font=ctk.CTkFont(size=11, family="Consolas"),
+                     fg_color=T["card"], border_color=T["border"],
+                     text_color=T["text"]).pack(pady=(0, 6))
+    def copy_btn(p, get_val):
+        ctk.CTkButton(p, text="Copy", width=50, height=22,
+                      font=ctk.CTkFont(size=10), fg_color="transparent",
+                      border_width=1, border_color=T["border"],
+                      text_color=T["muted"], hover_color=T["border"],
+                      command=lambda: (app.clipboard_clear(),
+                                       app.clipboard_append(get_val()))
+                      ).pack(pady=(0, 6))
+    def local_fn(p):
+        lbl = ctk.CTkLabel(p, text=f"{local_ip}:{port_var.get()}",
+                           font=ctk.CTkFont(size=10, family="Consolas"),
+                           text_color=T["start"])
+        lbl.pack(padx=4)
+        def upd(*_): lbl.configure(text=f"{local_ip}:{port_var.get()}")
+        port_var.trace_add("write", upd)
+        copy_btn(p, lambda: f"{local_ip}:{port_var.get()}")
+    def ext_fn(p):
+        ctk.CTkLabel(p, textvariable=ext_ip_var,
+                     font=ctk.CTkFont(size=10, family="Consolas"),
+                     text_color=T["sync"]).pack(padx=4)
+        copy_btn(p, ext_ip_var.get)
+    custom_var = ctk.StringVar(value=settings.get("custom_ip", ""))
+    def custom_fn(p):
+        e = ctk.CTkEntry(p, textvariable=custom_var, height=24,
+                         font=ctk.CTkFont(size=10, family="Consolas"),
+                         fg_color=T["card"], border_color=T["border"],
+                         text_color=T["text"], placeholder_text="play.example.net")
+        e.pack(padx=6, fill="x")
+        def set_c():
+            v = custom_var.get().strip()
+            if v:
+                ext_ip_var.set(f"{v}:{port_var.get()}")
+                update_setting("custom_ip", v)
+        ctk.CTkButton(p, text="Set", width=40, height=22,
+                      font=ctk.CTkFont(size=10), fg_color=T["sync"],
+                      hover_color=T["sync"], text_color="#000",
+                      command=set_c).pack(pady=(2, 6))
+    def localhost_fn(p):
+        ctk.CTkLabel(p, text=f"localhost:{port_var.get()}",
+                     font=ctk.CTkFont(size=10, family="Consolas"),
+                     text_color=T["handoff"]).pack(padx=4)
+        copy_btn(p, lambda: f"localhost:{port_var.get()}")
+    cell(0, "Port", port_fn)
+    cell(1, "Local (LAN)", local_fn)
+    cell(2, "External (Internet)", ext_fn)
+    cell(3, "Custom Domain", custom_fn)
+    cell(4, "This PC", localhost_fn)
+    def fetch():
+        try:
+            ip = urllib.request.urlopen("https://api.ipify.org", timeout=5).read().decode()
+            saved = settings.get("custom_ip", "")
+            app.after(0, lambda: ext_ip_var.set(
+                f"{saved}:{port_var.get()}" if saved else f"{ip}:{port_var.get()}"))
+        except:
+            app.after(0, lambda: ext_ip_var.set("unavailable"))
+    threading.Thread(target=fetch, daemon=True).start()
+
+# ── Server info panel ─────────────────────────────────────
+def build_server_info_panel(parent):
+    pf = ctk.CTkFrame(parent, fg_color=T["card"], border_color=T["border"],
+                      border_width=1, corner_radius=10)
+    pf.pack(fill="x", padx=20, pady=(0, 12))
+    ctk.CTkLabel(pf, text="SERVER INFO", font=ctk.CTkFont(size=10),
+                 text_color=T["muted"]).pack(anchor="w", padx=12, pady=(8, 4))
+
+    def sub(title, key, fn):
+        vis = ctk.BooleanVar(value=settings.get(f"info_{key}", False))
+        hdr = ctk.CTkFrame(pf, fg_color="transparent")
+        hdr.pack(fill="x", padx=12, pady=(4, 0))
+        cf = ctk.CTkFrame(pf, fg_color=T["bg"], border_color=T["border"],
+                          border_width=1, corner_radius=8)
+        def refresh():
+            for w in cf.winfo_children():
+                w.destroy()
+            fn(cf)
+        def toggle():
+            s = load_settings()
+            if vis.get():
+                cf.pack_forget(); vis.set(False)
+                s[f"info_{key}"] = False; tb.configure(text="Show")
+            else:
+                cf.pack(fill="x", padx=12, pady=(2, 6)); vis.set(True)
+                s[f"info_{key}"] = True; tb.configure(text="Hide")
+                refresh()
+            save_settings(s)
+        ctk.CTkLabel(hdr, text=title, font=ctk.CTkFont(size=11, weight="bold"),
+                     text_color=T["text"]).pack(side="left")
+        ctk.CTkButton(hdr, text="Refresh", width=50, height=20, font=ctk.CTkFont(size=10),
+                      fg_color="transparent", border_width=1, border_color=T["border"],
+                      text_color=T["muted"], hover_color=T["border"],
+                      command=refresh).pack(side="right", padx=(4, 0))
+        tb = ctk.CTkButton(hdr, text="Hide" if vis.get() else "Show",
+                           width=44, height=20, font=ctk.CTkFont(size=10),
+                           fg_color="transparent", border_width=1,
+                           border_color=T["border"], text_color=T["muted"],
+                           hover_color=T["border"], command=toggle)
+        tb.pack(side="right")
+        if vis.get():
+            cf.pack(fill="x", padx=12, pady=(2, 6))
+            refresh()
+
+    def div():
+        ctk.CTkFrame(pf, height=1, fg_color=T["border"]).pack(fill="x", padx=12, pady=4)
+
+    def plugins(f):
+        path = e_path.get() if 'e_path' in globals() else SRV_PATH
+        try:
+            jars = sorted([x for x in os.listdir(os.path.join(path, "plugins"))
+                           if x.endswith(".jar")])
+            if not jars:
+                ctk.CTkLabel(f, text="No plugins found.", font=ctk.CTkFont(size=11),
+                             text_color=T["muted"]).pack(anchor="w", padx=10, pady=6)
+            else:
+                for j in jars:
+                    r = ctk.CTkFrame(f, fg_color="transparent")
+                    r.pack(fill="x", padx=8, pady=1)
+                    ctk.CTkLabel(r, text="*", font=ctk.CTkFont(size=10),
+                                 text_color=T["sync"], width=16).pack(side="left")
+                    ctk.CTkLabel(r, text=j.replace(".jar", ""),
+                                 font=ctk.CTkFont(size=11), text_color=T["text"],
+                                 anchor="w").pack(side="left")
+        except Exception as ex:
+            ctk.CTkLabel(f, text=f"Error: {ex}", font=ctk.CTkFont(size=11),
+                         text_color=T["stop"]).pack(anchor="w", padx=10, pady=6)
+        ctk.CTkFrame(f, height=4, fg_color="transparent").pack()
+
+    def players(f):
+        names = list(online_players.keys())
+        if not names:
+            ctk.CTkLabel(f, text="No players online.", font=ctk.CTkFont(size=11),
+                         text_color=T["muted"]).pack(anchor="w", padx=10, pady=6)
+        else:
+            for name in sorted(names):
+                r = ctk.CTkFrame(f, fg_color="transparent")
+                r.pack(fill="x", padx=8, pady=1)
+                ctk.CTkLabel(r, text="o", font=ctk.CTkFont(size=10),
+                             text_color=T["start"], width=16).pack(side="left")
+                ctk.CTkLabel(r, text=name, font=ctk.CTkFont(size=11),
+                             text_color=T["text"], anchor="w").pack(side="left")
+                ctk.CTkButton(r, text="Kick", width=40, height=20,
+                              font=ctk.CTkFont(size=10), fg_color="transparent",
+                              border_width=1, border_color=T["stop"],
+                              text_color=T["stop"], hover_color=T["border"],
+                              command=lambda nm=name: send_server_cmd(f"kick {nm}")
+                              ).pack(side="right", padx=4)
+        ctk.CTkFrame(f, height=4, fg_color="transparent").pack()
+
+    def respacks(f):
+        path = e_path.get() if 'e_path' in globals() else SRV_PATH
+        found = []
+        for d in ["resource-packs", "resourcepacks", "resources"]:
+            dp = os.path.join(path, d)
+            if os.path.isdir(dp):
+                for x in os.listdir(dp):
+                    if x.endswith((".zip", ".jar")):
+                        found.append(x)
+        if not found:
+            ctk.CTkLabel(f, text="No resource packs found.", font=ctk.CTkFont(size=11),
+                         text_color=T["muted"]).pack(anchor="w", padx=10, pady=6)
+        else:
+            for rp in sorted(found):
+                r = ctk.CTkFrame(f, fg_color="transparent")
+                r.pack(fill="x", padx=8, pady=1)
+                ctk.CTkLabel(r, text=">", font=ctk.CTkFont(size=10),
+                             text_color=T["handoff"], width=16).pack(side="left")
+                ctk.CTkLabel(r, text=rp, font=ctk.CTkFont(size=11),
+                             text_color=T["text"], anchor="w").pack(side="left")
+        ctk.CTkFrame(f, height=4, fg_color="transparent").pack()
+
+    def props(f):
+        path = e_path.get() if 'e_path' in globals() else SRV_PATH
+        SHOW = ["gamemode","difficulty","max-players","view-distance","simulation-distance",
+                "online-mode","pvp","spawn-monsters","spawn-animals","allow-flight",
+                "level-name","server-port","motd","white-list","enforce-whitelist"]
+        try:
+            kv = {}
+            with open(os.path.join(path, "server.properties"), "r",
+                      encoding="utf-8", errors="ignore") as fp:
+                for line in fp:
+                    line = line.strip()
+                    if line and not line.startswith("#") and "=" in line:
+                        k, _, v = line.partition("=")
+                        kv[k.strip()] = v.strip()
+            g = ctk.CTkFrame(f, fg_color="transparent")
+            g.pack(fill="x", padx=8, pady=4)
+            g.columnconfigure((0, 1, 2), weight=1)
+            for i, (k, v) in enumerate([(k, kv[k]) for k in SHOW if k in kv]):
+                col = i % 3; ri = i // 3
+                c = ctk.CTkFrame(g, fg_color=T["card"], border_color=T["border"],
+                                 border_width=1, corner_radius=6)
+                c.grid(row=ri, column=col, padx=3, pady=3, sticky="ew")
+                ctk.CTkLabel(c, text=k, font=ctk.CTkFont(size=9),
+                             text_color=T["muted"]).pack(anchor="w", padx=8, pady=(4, 0))
+                color = (T["start"] if v in ("true", "1")
+                         else T["stop"] if v in ("false", "0")
+                         else T["text"])
+                ctk.CTkLabel(c, text=v, font=ctk.CTkFont(size=11, weight="bold"),
+                             text_color=color).pack(anchor="w", padx=8, pady=(0, 4))
+        except FileNotFoundError:
+            ctk.CTkLabel(f, text="server.properties not found.",
+                         font=ctk.CTkFont(size=11),
+                         text_color=T["muted"]).pack(anchor="w", padx=10, pady=6)
+        except Exception as ex:
+            ctk.CTkLabel(f, text=f"Error: {ex}", font=ctk.CTkFont(size=11),
+                         text_color=T["stop"]).pack(anchor="w", padx=10, pady=6)
+        ctk.CTkFrame(f, height=4, fg_color="transparent").pack()
+
+    sub("Plugins",           "plugins",       plugins)
+    div()
+    sub("Online Players",    "players",       players)
+    div()
+    sub("Resource Packs",    "resourcepacks", respacks)
+    div()
+    sub("Server Properties", "properties",    props)
+    ctk.CTkFrame(pf, height=8, fg_color="transparent").pack()
 
 # ── Settings tab ──────────────────────────────────────────
 def build_settings_tab(parent):
@@ -584,38 +1225,34 @@ def build_settings_tab(parent):
     scroll.pack(fill="both", expand=True, padx=20, pady=12)
 
     def section(title):
-        f = ctk.CTkFrame(scroll, fg_color=T["card"], border_color=T["border"], border_width=1)
-        f.pack(fill="x", pady=(0,10))
+        f = ctk.CTkFrame(scroll, fg_color=T["card"], border_color=T["border"],
+                         border_width=1, corner_radius=10)
+        f.pack(fill="x", pady=(0, 10))
         ctk.CTkLabel(f, text=title, font=ctk.CTkFont(size=11, weight="bold"),
-                     text_color=T["text"]).pack(anchor="w", padx=14, pady=(10,4))
+                     text_color=T["text"]).pack(anchor="w", padx=14, pady=(10, 4))
         ctk.CTkFrame(f, height=1, fg_color=T["border"]).pack(fill="x", padx=14)
-        body = ctk.CTkFrame(f, fg_color="transparent")
-        body.pack(fill="x", padx=14, pady=(6,10))
-        return body
+        b = ctk.CTkFrame(f, fg_color="transparent")
+        b.pack(fill="x", padx=14, pady=(6, 10))
+        return b
 
-    def row(parent, label, widget_fn):
+    def row(parent, label, fn):
         r = ctk.CTkFrame(parent, fg_color="transparent")
-        r.pack(fill="x", pady=4)
+        r.pack(fill="x", pady=5)
         ctk.CTkLabel(r, text=label, font=ctk.CTkFont(size=12),
-                     text_color=T["text"], width=220, anchor="w").pack(side="left")
-        widget_fn(r)
-        return r
+                     text_color=T["text"], width=240, anchor="w").pack(side="left")
+        fn(r)
 
-    def toggle_widget(parent, get_val, on_change):
+    def sw(parent, get_val, on_change):
         var = ctk.BooleanVar(value=get_val())
-        def cmd():
-            on_change(var.get())
-        sw = ctk.CTkSwitch(parent, text="", variable=var, command=cmd,
-                           button_color=T["sync"], progress_color=T["sync"])
-        sw.pack(side="right")
-        return sw
+        ctk.CTkSwitch(parent, text="", variable=var,
+                      command=lambda: on_change(var.get()),
+                      button_color=T["sync"],
+                      progress_color=T["sync"]).pack(side="right")
 
-    # ── Appearance ────────────────────────────────────────
+    # Appearance
     b = section("Appearance")
-
-    def theme_row(parent):
-        tm = ctk.CTkOptionMenu(parent, values=list(THEMES.keys()),
-                               command=apply_theme,
+    def theme_fn(p):
+        tm = ctk.CTkOptionMenu(p, values=list(THEMES.keys()), command=apply_theme,
                                font=ctk.CTkFont(size=12), width=200,
                                fg_color=T["bg"], button_color=T["border"],
                                button_hover_color=T["muted"], text_color=T["text"],
@@ -623,65 +1260,51 @@ def build_settings_tab(parent):
                                dropdown_hover_color=T["border"])
         tm.set(current_theme_name)
         tm.pack(side="right")
-    row(b, "Theme", theme_row)
+    row(b, "Theme", theme_fn)
+    row(b, "Fullscreen", lambda p: sw(p, lambda: fullscreen, lambda v: toggle_fullscreen()))
+    def ram_fn(p):
+        def toggle():
+            global ram_display_mode
+            ram_display_mode = "fraction" if ram_display_mode == "percent" else "percent"
+            update_setting("ram_display_mode", ram_display_mode)
+        sw(p, lambda: ram_display_mode == "fraction", lambda v: toggle())
+    row(b, "Show RAM as x/y GB (instead of %)", ram_fn)
 
-    def fs_row(parent):
-        toggle_widget(parent, lambda: fullscreen,
-                      lambda v: toggle_fullscreen())
-    row(b, "Fullscreen", fs_row)
-
-    # ── Layout ────────────────────────────────────────────
+    # Layout
     b = section("Layout")
+    row(b, "Log panel on left side",   lambda p: sw(p, lambda: log_left,  lambda v: swap_layout()))
+    row(b, "Show performance panel",   lambda p: sw(p, lambda: show_perf, lambda v: toggle_perf()))
+    row(b, "Show chat & events panel", lambda p: sw(p, lambda: show_chat, lambda v: toggle_chat()))
 
-    def swap_row(parent):
-        toggle_widget(parent, lambda: log_left,
-                      lambda v: swap_layout())
-    row(b, "Log panel on left", swap_row)
-
-    def perf_row(parent):
-        toggle_widget(parent, lambda: show_perf,
-                      lambda v: toggle_perf())
-    row(b, "Show performance panel", perf_row)
-
-    def chat_row(parent):
-        toggle_widget(parent, lambda: show_chat,
-                      lambda v: toggle_chat())
-    row(b, "Show chat & events panel", chat_row)
-
-    # ── Server ────────────────────────────────────────────
+    # Server
     b = section("Server")
-
-    def srv_entry(parent, label, default, key):
+    def srv_e(label, key, default):
         r = ctk.CTkFrame(b, fg_color="transparent")
         r.pack(fill="x", pady=4)
         ctk.CTkLabel(r, text=label, font=ctk.CTkFont(size=12),
-                     text_color=T["text"], width=220, anchor="w").pack(side="left")
+                     text_color=T["text"], width=240, anchor="w").pack(side="left")
         e = ctk.CTkEntry(r, font=ctk.CTkFont(size=11, family="Consolas"),
                          fg_color=T["bg"], border_color=T["border"],
                          text_color=T["text"], height=28)
         e.insert(0, settings.get(key, default))
         e.pack(side="left", fill="x", expand=True)
-        def save(*_):
-            s = load_settings(); s[key] = e.get(); save_settings(s)
-        e.bind("<FocusOut>", save); e.bind("<Return>", save)
+        def save(*_): update_setting(key, e.get())
+        e.bind("<FocusOut>", save)
+        e.bind("<Return>", save)
         return e
 
     global e_path, e_repo, e_java
-    e_path = srv_entry(b, "Server path", SRV_PATH, "srv_path")
-    e_repo = srv_entry(b, "GitHub repo URL", REPO_URL, "repo_url")
-    e_java = srv_entry(b, "Java executable path", JAVA_PATH, "java_path")
+    e_path = srv_e("Server path",     "srv_path",  SRV_PATH)
+    e_repo = srv_e("GitHub repo URL", "repo_url",  REPO_URL)
+    e_java = srv_e("Java path",       "java_path", JAVA_PATH)
 
-    # ── Auto Upload ───────────────────────────────────────
+    # Auto Upload
     b = section("Auto Upload")
-
-    def au_toggle(parent):
-        toggle_widget(parent, lambda: auto_upload,
-                      lambda v: toggle_auto_upload())
-    row(b, "Enable auto upload", au_toggle)
-
-    def au_mins(parent):
+    row(b, "Enable auto upload",
+        lambda p: sw(p, lambda: auto_upload, lambda v: toggle_auto_upload()))
+    def mins_fn(p):
         var = ctk.StringVar(value=str(auto_upload_mins))
-        e = ctk.CTkEntry(parent, textvariable=var, width=60, height=28,
+        e = ctk.CTkEntry(p, textvariable=var, width=60, height=28,
                          font=ctk.CTkFont(size=12, family="Consolas"),
                          fg_color=T["bg"], border_color=T["border"], text_color=T["text"])
         e.pack(side="right")
@@ -689,294 +1312,45 @@ def build_settings_tab(parent):
             global auto_upload_mins
             try:
                 auto_upload_mins = max(1, int(float(var.get())))
-                s = load_settings(); s["auto_upload_mins"] = auto_upload_mins; save_settings(s)
-                if auto_upload: schedule_auto_upload()
-            except: pass
-        e.bind("<FocusOut>", save); e.bind("<Return>", save)
-    row(b, "Upload interval (minutes)", au_mins)
+                update_setting("auto_upload_mins", auto_upload_mins)
+                if auto_upload:
+                    schedule_auto_upload()
+            except:
+                pass
+        e.bind("<FocusOut>", save)
+        e.bind("<Return>", save)
+    row(b, "Upload interval (minutes)", mins_fn)
+    row(b, "Upload world to GitHub on server stop",
+        lambda p: sw(p, lambda: upload_on_stop, lambda v: _set_upload_on_stop(v)))
 
-    def uos_toggle(parent):
-        toggle_widget(parent, lambda: upload_on_stop,
-                      lambda v: _set_upload_on_stop(v))
-    row(b, "Upload to GitHub when server stops", uos_toggle)
+    # Setup & About (re-open onboarding)
+    b = section("Setup & About")
+    def reopen_fn(p):
+        ctk.CTkButton(p, text="Re-open First-Launch Setup",
+                      font=ctk.CTkFont(size=11), height=28,
+                      fg_color=T["sync"], hover_color=T["sync"],
+                      text_color="#000",
+                      command=show_first_launch_dialog).pack(side="right")
+    row(b, "Re-read README / change initial settings", reopen_fn)
 
-    ctk.CTkLabel(scroll, text=f"Settings saved to: {SETTINGS_FILE}",
-                 font=ctk.CTkFont(size=10), text_color=T["muted"]).pack(anchor="w", pady=(4,0))
+    ctk.CTkLabel(scroll, text=f"Settings file: {SETTINGS_FILE}",
+                 font=ctk.CTkFont(size=10), text_color=T["muted"]).pack(anchor="w", pady=(4, 0))
 
 def _set_upload_on_stop(val):
     global upload_on_stop
     upload_on_stop = val
-    s = load_settings(); s["upload_on_stop"] = val; save_settings(s)
+    update_setting("upload_on_stop", val)
 
-# ── Perf panel ────────────────────────────────────────────
-def build_perf_panel(parent, pinned_bottom=False):
-    global perf_labels
-    perf_labels = {}
-    pf = ctk.CTkFrame(parent, fg_color=T["card"], border_color=T["border"], border_width=1)
-    if pinned_bottom: pf.pack(side="bottom", fill="x", padx=20, pady=(0,12))
-    else: pf.pack(fill="x", padx=20, pady=(0,10))
-    ph = ctk.CTkFrame(pf, fg_color="transparent")
-    ph.pack(fill="x", padx=12, pady=(8,4))
-    ctk.CTkLabel(ph, text="SERVER PERFORMANCE", font=ctk.CTkFont(size=10), text_color=T["muted"]).pack(side="left")
-    ctk.CTkLabel(ph, text="Updates every 2s",   font=ctk.CTkFont(size=10), text_color=T["muted"]).pack(side="right")
-    grid = ctk.CTkFrame(pf, fg_color="transparent")
-    grid.pack(fill="x", padx=12, pady=(0,10))
-    stats = [
-        ("TPS","tps","Ticks/sec"),("Players","players","Online"),
-        ("Avg Latency","latency","Ping"),("Uptime","uptime","Server uptime"),
-        ("RAM (Total)","ram_used","System RAM"),("RAM %","ram_pct","RAM usage"),
-        ("RAM (Server)","ram_srv","Java RAM"),("CPU (System)","cpu_sys","Total CPU"),
-        ("CPU (Server)","cpu_srv","Java CPU"),("Threads","threads","Java threads"),
-    ]
-    for i,(label,key,_) in enumerate(stats):
-        col=i%5; row=i//5
-        cell = ctk.CTkFrame(grid, fg_color=T["bg"], border_color=T["border"],
-                            border_width=1, corner_radius=6)
-        cell.grid(row=row, column=col, padx=4, pady=4, sticky="ew")
-        grid.columnconfigure(col, weight=1)
-        ctk.CTkLabel(cell, text=label, font=ctk.CTkFont(size=10), text_color=T["muted"]).pack(pady=(6,0))
-        lbl = ctk.CTkLabel(cell, text=perf[key], font=ctk.CTkFont(size=14, weight="bold"), text_color=T["text"])
-        lbl.pack(pady=(0,6))
-        perf_labels[key] = lbl
-
-# ── IP panel ──────────────────────────────────────────────
-def build_ip_panel(parent, pinned_bottom=False):
-    import socket, urllib.request
-    def get_local_ip():
-        try:
-            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            s.connect(("8.8.8.8",80)); ip=s.getsockname()[0]; s.close(); return ip
-        except: return "127.0.0.1"
-    local_ip = get_local_ip()
-    port_val = settings.get("server_port","25565")
-    pf = ctk.CTkFrame(parent, fg_color=T["card"], border_color=T["border"], border_width=1)
-    if pinned_bottom: pf.pack(side="bottom", fill="x", padx=20, pady=(0,10))
-    else: pf.pack(fill="x", padx=20, pady=(0,10))
-    ph = ctk.CTkFrame(pf, fg_color="transparent")
-    ph.pack(fill="x", padx=12, pady=(8,4))
-    ctk.CTkLabel(ph, text="SERVER IPs", font=ctk.CTkFont(size=10), text_color=T["muted"]).pack(side="left")
-    grid = ctk.CTkFrame(pf, fg_color="transparent")
-    grid.pack(fill="x", padx=12, pady=(0,10))
-    grid.columnconfigure((0,1,2,3,4), weight=1)
-    port_var = ctk.StringVar(value=port_val)
-    def save_port(*_):
-        s=load_settings(); s["server_port"]=port_var.get(); save_settings(s)
-    port_var.trace_add("write", save_port)
-    ext_ip_var = ctk.StringVar(value="fetching...")
-    def make_cell(col, label, fn):
-        cell = ctk.CTkFrame(grid, fg_color=T["bg"], border_color=T["border"], border_width=1, corner_radius=6)
-        cell.grid(row=0, column=col, padx=4, pady=4, sticky="ew")
-        ctk.CTkLabel(cell, text=label, font=ctk.CTkFont(size=10), text_color=T["muted"]).pack(pady=(6,2), padx=8)
-        fn(cell)
-    def port_cell(p):
-        ctk.CTkEntry(p, textvariable=port_var, width=80, height=26,
-                     font=ctk.CTkFont(size=12, family="Consolas"),
-                     fg_color=T["card"], border_color=T["border"],
-                     text_color=T["text"]).pack(pady=(0,6))
-    def local_cell(p):
-        lbl = ctk.CTkLabel(p, text=f"{local_ip}:{port_var.get()}",
-                           font=ctk.CTkFont(size=11, family="Consolas"), text_color=T["start"])
-        lbl.pack(pady=(0,2), padx=8)
-        def on_port(*_): lbl.configure(text=f"{local_ip}:{port_var.get()}")
-        port_var.trace_add("write", on_port)
-        ctk.CTkButton(p, text="Copy", width=50, height=22, font=ctk.CTkFont(size=10),
-                      fg_color="transparent", border_width=1, border_color=T["border"],
-                      text_color=T["muted"], hover_color=T["border"],
-                      command=lambda:(app.clipboard_clear(),
-                                      app.clipboard_append(f"{local_ip}:{port_var.get()}"))).pack(pady=(0,6))
-    def ext_cell(p):
-        ctk.CTkLabel(p, textvariable=ext_ip_var,
-                     font=ctk.CTkFont(size=11, family="Consolas"), text_color=T["sync"]).pack(pady=(0,2), padx=8)
-        ctk.CTkButton(p, text="Copy", width=50, height=22, font=ctk.CTkFont(size=10),
-                      fg_color="transparent", border_width=1, border_color=T["border"],
-                      text_color=T["muted"], hover_color=T["border"],
-                      command=lambda:(app.clipboard_clear(),
-                                      app.clipboard_append(ext_ip_var.get()))).pack(pady=(0,6))
-    custom_var = ctk.StringVar(value=settings.get("custom_ip",""))
-    def custom_cell(p):
-        e = ctk.CTkEntry(p, textvariable=custom_var, height=26,
-                         font=ctk.CTkFont(size=11, family="Consolas"),
-                         fg_color=T["card"], border_color=T["border"],
-                         text_color=T["text"], placeholder_text="play.myserver.net")
-        e.pack(pady=(0,2), padx=8, fill="x")
-        def set_c():
-            v=custom_var.get().strip()
-            if v:
-                ext_ip_var.set(f"{v}:{port_var.get()}")
-                s=load_settings(); s["custom_ip"]=v; save_settings(s)
-        ctk.CTkButton(p, text="Set as External", width=100, height=22,
-                      font=ctk.CTkFont(size=10), fg_color=T["sync"],
-                      hover_color=T["sync"], text_color="#000",
-                      command=set_c).pack(pady=(0,6))
-    def localhost_cell(p):
-        ctk.CTkLabel(p, text=f"localhost:{port_var.get()}",
-                     font=ctk.CTkFont(size=11, family="Consolas"), text_color=T["handoff"]).pack(pady=(0,2), padx=8)
-        ctk.CTkButton(p, text="Copy", width=50, height=22, font=ctk.CTkFont(size=10),
-                      fg_color="transparent", border_width=1, border_color=T["border"],
-                      text_color=T["muted"], hover_color=T["border"],
-                      command=lambda:(app.clipboard_clear(),
-                                      app.clipboard_append(f"localhost:{port_var.get()}"))).pack(pady=(0,6))
-    make_cell(0,"Port",port_cell)
-    make_cell(1,"Local IP (same network)",local_cell)
-    make_cell(2,"External IP (internet)",ext_cell)
-    make_cell(3,"Custom domain / IP",custom_cell)
-    make_cell(4,"This PC (localhost)",localhost_cell)
-    def fetch_ext():
-        try:
-            ip = urllib.request.urlopen("https://api.ipify.org",timeout=5).read().decode()
-            saved = settings.get("custom_ip","")
-            app.after(0, lambda: ext_ip_var.set(f"{saved}:{port_var.get()}" if saved else f"{ip}:{port_var.get()}"))
-        except:
-            app.after(0, lambda: ext_ip_var.set("unavailable"))
-    threading.Thread(target=fetch_ext, daemon=True).start()
-
-# ── Server info panel ─────────────────────────────────────
-def build_server_info_panel(parent):
-    pf = ctk.CTkFrame(parent, fg_color=T["card"], border_color=T["border"], border_width=1)
-    pf.pack(fill="x", padx=20, pady=(0,12))
-    ctk.CTkLabel(pf, text="SERVER INFO", font=ctk.CTkFont(size=10),
-                 text_color=T["muted"]).pack(anchor="w", padx=12, pady=(8,4))
-
-    def make_sub(title, key, build_fn):
-        visible = ctk.BooleanVar(value=settings.get(f"info_{key}", False))
-        hdr = ctk.CTkFrame(pf, fg_color="transparent")
-        hdr.pack(fill="x", padx=12, pady=(4,0))
-        cf = ctk.CTkFrame(pf, fg_color=T["bg"], border_color=T["border"],
-                          border_width=1, corner_radius=6)
-        def refresh():
-            for w in cf.winfo_children(): w.destroy()
-            build_fn(cf)
-        def toggle():
-            s = load_settings()
-            if visible.get():
-                cf.pack_forget(); visible.set(False)
-                s[f"info_{key}"] = False; toggle_btn.configure(text="Show")
-            else:
-                cf.pack(fill="x", padx=12, pady=(2,6)); visible.set(True)
-                s[f"info_{key}"] = True; toggle_btn.configure(text="Hide")
-                refresh()
-            save_settings(s)
-        ctk.CTkLabel(hdr, text=title, font=ctk.CTkFont(size=11, weight="bold"),
-                     text_color=T["text"]).pack(side="left")
-        ctk.CTkButton(hdr, text="Refresh", width=54, height=20, font=ctk.CTkFont(size=10),
-                      fg_color="transparent", border_width=1, border_color=T["border"],
-                      text_color=T["muted"], hover_color=T["border"],
-                      command=refresh).pack(side="right", padx=(4,0))
-        toggle_btn = ctk.CTkButton(hdr, text="Hide" if visible.get() else "Show",
-                                   width=44, height=20, font=ctk.CTkFont(size=10),
-                                   fg_color="transparent", border_width=1,
-                                   border_color=T["border"], text_color=T["muted"],
-                                   hover_color=T["border"], command=toggle)
-        toggle_btn.pack(side="right")
-        if visible.get():
-            cf.pack(fill="x", padx=12, pady=(2,6)); refresh()
-
-    def divider():
-        ctk.CTkFrame(pf, height=1, fg_color=T["border"]).pack(fill="x", padx=12, pady=4)
-
-    def build_plugins(frame):
-        path = e_path.get() if 'e_path' in globals() else SRV_PATH
-        try:
-            jars = sorted([f for f in os.listdir(os.path.join(path,"plugins")) if f.endswith(".jar")])
-            if not jars:
-                ctk.CTkLabel(frame, text="No plugins found.", font=ctk.CTkFont(size=11),
-                             text_color=T["muted"]).pack(anchor="w", padx=10, pady=6)
-            else:
-                for jar in jars:
-                    r = ctk.CTkFrame(frame, fg_color="transparent"); r.pack(fill="x", padx=8, pady=1)
-                    ctk.CTkLabel(r, text="◆", font=ctk.CTkFont(size=10), text_color=T["sync"], width=16).pack(side="left")
-                    ctk.CTkLabel(r, text=jar.replace(".jar",""), font=ctk.CTkFont(size=11),
-                                 text_color=T["text"], anchor="w").pack(side="left")
-        except Exception as ex:
-            ctk.CTkLabel(frame, text=f"Error: {ex}", font=ctk.CTkFont(size=11),
-                         text_color=T["stop"]).pack(anchor="w", padx=10, pady=6)
-        ctk.CTkFrame(frame, height=4, fg_color="transparent").pack()
-
-    def build_players(frame):
-        names = list(online_players.keys())
-        if not names:
-            ctk.CTkLabel(frame, text="No players online.", font=ctk.CTkFont(size=11),
-                         text_color=T["muted"]).pack(anchor="w", padx=10, pady=6)
-        else:
-            for name in sorted(names):
-                r = ctk.CTkFrame(frame, fg_color="transparent"); r.pack(fill="x", padx=8, pady=1)
-                ctk.CTkLabel(r, text="●", font=ctk.CTkFont(size=10), text_color=T["start"], width=16).pack(side="left")
-                ctk.CTkLabel(r, text=name, font=ctk.CTkFont(size=11),
-                             text_color=T["text"], anchor="w").pack(side="left")
-                ctk.CTkButton(r, text="Kick", width=40, height=20, font=ctk.CTkFont(size=10),
-                              fg_color="transparent", border_width=1, border_color=T["stop"],
-                              text_color=T["stop"], hover_color=T["border"],
-                              command=lambda nm=name: send_server_cmd(f"kick {nm}")
-                              ).pack(side="right", padx=4)
-        ctk.CTkFrame(frame, height=4, fg_color="transparent").pack()
-
-    def build_resourcepacks(frame):
-        path = e_path.get() if 'e_path' in globals() else SRV_PATH
-        found = []
-        for d in ["resource-packs","resourcepacks","resources"]:
-            dp = os.path.join(path, d)
-            if os.path.isdir(dp):
-                for f in os.listdir(dp):
-                    if f.endswith((".zip",".jar")): found.append(f)
-        if not found:
-            ctk.CTkLabel(frame, text="No resource packs found.", font=ctk.CTkFont(size=11),
-                         text_color=T["muted"]).pack(anchor="w", padx=10, pady=6)
-        else:
-            for rp in sorted(found):
-                r = ctk.CTkFrame(frame, fg_color="transparent"); r.pack(fill="x", padx=8, pady=1)
-                ctk.CTkLabel(r, text="◈", font=ctk.CTkFont(size=10), text_color=T["handoff"], width=16).pack(side="left")
-                ctk.CTkLabel(r, text=rp, font=ctk.CTkFont(size=11), text_color=T["text"], anchor="w").pack(side="left")
-        ctk.CTkFrame(frame, height=4, fg_color="transparent").pack()
-
-    def build_properties(frame):
-        path = e_path.get() if 'e_path' in globals() else SRV_PATH
-        SHOW = ["gamemode","difficulty","max-players","view-distance","simulation-distance",
-                "online-mode","pvp","spawn-monsters","spawn-animals","allow-flight",
-                "level-name","server-port","motd","white-list","enforce-whitelist"]
-        try:
-            props = {}
-            with open(os.path.join(path,"server.properties"), "r", encoding="utf-8", errors="ignore") as f:
-                for line in f:
-                    line = line.strip()
-                    if line and not line.startswith("#") and "=" in line:
-                        k,_,v = line.partition("="); props[k.strip()] = v.strip()
-            g = ctk.CTkFrame(frame, fg_color="transparent"); g.pack(fill="x", padx=8, pady=4)
-            g.columnconfigure((0,1,2), weight=1)
-            for i,(k,v) in enumerate([(k,props[k]) for k in SHOW if k in props]):
-                col=i%3; row_i=i//3
-                cell = ctk.CTkFrame(g, fg_color=T["card"], border_color=T["border"],
-                                    border_width=1, corner_radius=6)
-                cell.grid(row=row_i, column=col, padx=3, pady=3, sticky="ew")
-                ctk.CTkLabel(cell, text=k, font=ctk.CTkFont(size=9), text_color=T["muted"]).pack(anchor="w", padx=8, pady=(4,0))
-                color = T["start"] if v in ("true","1") else T["stop"] if v in ("false","0") else T["text"]
-                ctk.CTkLabel(cell, text=v, font=ctk.CTkFont(size=11, weight="bold"),
-                             text_color=color).pack(anchor="w", padx=8, pady=(0,4))
-        except FileNotFoundError:
-            ctk.CTkLabel(frame, text="server.properties not found.", font=ctk.CTkFont(size=11),
-                         text_color=T["muted"]).pack(anchor="w", padx=10, pady=6)
-        except Exception as ex:
-            ctk.CTkLabel(frame, text=f"Error: {ex}", font=ctk.CTkFont(size=11),
-                         text_color=T["stop"]).pack(anchor="w", padx=10, pady=6)
-        ctk.CTkFrame(frame, height=4, fg_color="transparent").pack()
-
-    make_sub("Plugins",           "plugins",     build_plugins)
-    divider()
-    make_sub("Online Players",    "players",     build_players)
-    divider()
-    make_sub("Resource Packs",    "resourcepacks", build_resourcepacks)
-    divider()
-    make_sub("Server Properties", "properties",  build_properties)
-    ctk.CTkFrame(pf, height=8, fg_color="transparent").pack()
-
-# ── Actions ───────────────────────────────────────────────
+# ── Server actions ────────────────────────────────────────
 def start_server():
     global server_proc, server_stdin, server_pid, server_start_time, perf_running, server_ready, player_count
     set_all_buttons("disabled")
-    path = settings.get("srv_path", e_path.get() if 'e_path' in globals() else SRV_PATH)
-    java = settings.get("java_path", e_java.get() if 'e_java' in globals() else JAVA_PATH)
-    repo = settings.get("repo_url",  e_repo.get() if 'e_repo' in globals() else REPO_URL)
+    s    = load_settings()
+    path = s.get("srv_path", SRV_PATH)
+    java = s.get("java_path", JAVA_PATH)
+    repo = s.get("repo_url", REPO_URL)
     set_status("Starting...", T["handoff"])
-    log("── Start Server ──────────────────")
+    log("-- Start Server ------------------")
     run_cmd(f"git remote set-url origin {repo}", cwd=path)
     log("Pulling latest world from GitHub...")
     run_cmd("git pull origin main", cwd=path)
@@ -996,62 +1370,103 @@ def start_server():
         java_cmd, shell=True, cwd=path,
         stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
         text=True, bufsize=1, creationflags=CREATE_NO_WINDOW)
-    server_stdin = server_proc.stdin; server_pid = server_proc.pid
-    server_start_time = datetime.now(); server_ready = False
-    player_count = 0; online_players.clear()
-    perf["tps"]="—"; perf["latency"]="—"; perf["players"]="0"
+    server_stdin      = server_proc.stdin
+    server_pid        = server_proc.pid
+    server_start_time = datetime.now()
+    server_ready      = False
+    player_count      = 0
+    online_players.clear()
+    perf["tps"] = perf["latency"] = "--"
+    perf["players"] = "0"
     threading.Thread(target=read_server_output, args=(server_proc,), daemon=True).start()
     if not perf_running:
         threading.Thread(target=perf_loop, daemon=True).start()
     set_status("Running", T["start"])
-    log("Server is running! (PID " + str(server_proc.pid) + ")")
-    btn_stop.configure(state="normal")
+    log(f"Server is running! (PID {server_proc.pid})")
+    try:
+        btn_stop.configure(state="normal")
+    except:
+        pass
 
 def stop_server():
     global server_proc, server_stdin, server_pid, server_start_time, perf_running, server_ready
     set_status("Stopping...", T["handoff"])
-    log("── Stop Server ───────────────────")
+    log("-- Stop Server -------------------")
     if server_stdin:
-        try: server_stdin.write("stop\n"); server_stdin.flush()
-        except: pass
+        try:
+            server_stdin.write("stop\n"); server_stdin.flush()
+        except:
+            pass
         server_stdin = None
-    result = subprocess.run("taskkill /F /IM java.exe", shell=True, capture_output=True,
-                            text=True, creationflags=CREATE_NO_WINDOW)
-    log("  Java process killed." if result.returncode == 0 else "  Java was not running.")
-    server_proc=None; server_pid=None; server_start_time=None
-    server_ready=False; perf_running=False
+    r = subprocess.run("taskkill /F /IM java.exe", shell=True, capture_output=True,
+                       text=True, creationflags=CREATE_NO_WINDOW)
+    log("  Java process killed." if r.returncode == 0 else "  Java was not running.")
+    server_proc = server_pid = server_start_time = None
+    server_ready = perf_running = False
     for k in ("tps","latency","players","uptime","ram_srv","cpu_srv","threads"):
-        perf[k]="—"
+        perf[k] = "--"
     if upload_on_stop:
-        path = settings.get("srv_path", SRV_PATH)
+        s    = load_settings()
+        path = s.get("srv_path", SRV_PATH)
         log("Pushing world to GitHub...")
         run_cmd("git add world/ world_nether/ world_the_end/", cwd=path)
         commit = subprocess.run(
             f'git commit -m "World update {datetime.now().strftime("%Y-%m-%d %H:%M")}"',
-            shell=True, cwd=path, capture_output=True, text=True, creationflags=CREATE_NO_WINDOW)
+            shell=True, cwd=path, capture_output=True, text=True,
+            creationflags=CREATE_NO_WINDOW)
         if "nothing to commit" in commit.stdout or commit.returncode != 0:
-            log("  World unchanged — nothing new to commit.")
+            log("  World unchanged - nothing to commit.")
         else:
-            for l in commit.stdout.strip().splitlines(): log(f"  {l}")
+            for line in commit.stdout.strip().splitlines():
+                log(f"  {line}")
             run_cmd("git push origin main", cwd=path)
+            app.after(0, show_toast, "World pushed to GitHub!", T["sync"])
     else:
-        log("  Upload on stop is disabled — skipping GitHub push.")
-    set_status("Stopped", T["stop"]); log("Done.")
+        log("  Upload on stop disabled - skipping push.")
+    set_status("Stopped", T["stop"])
+    log("Done.")
     set_all_buttons("normal")
 
 def sync_git():
     set_all_buttons("disabled")
-    path = settings.get("srv_path", SRV_PATH)
-    repo = settings.get("repo_url", REPO_URL)
+    s    = load_settings()
+    path = s.get("srv_path", SRV_PATH)
+    repo = s.get("repo_url", REPO_URL)
     set_status("Syncing...", T["handoff"])
-    log("── Sync & Upload ─────────────────")
+    log("-- Sync & Upload -----------------")
     run_cmd(f"git remote set-url origin {repo}", cwd=path)
     run_cmd("git add .", cwd=path)
     run_cmd('git commit -m "Manual Sync"', cwd=path)
     ok = run_cmd("git push origin main", cwd=path)
-    log("Upload complete!" if ok else "Push failed — check log above.")
-    set_status("Stopped", T["stop"]); set_all_buttons("normal")
+    if ok:
+        app.after(0, show_toast, "Manual sync complete!", T["sync"])
+    log("Upload complete!" if ok else "Push failed.")
+    set_status("Stopped", T["stop"])
+    set_all_buttons("normal")
 
+# ── Boot ──────────────────────────────────────────────────
 build_ui()
-if auto_upload: schedule_auto_upload()
+if auto_upload:
+    schedule_auto_upload()
+
+def _splash():
+    lines = [
+        "",
+        "  MMM   MMM  CCCC    CCCC TTTTTT RRRR  LL     ",
+        "  MMMM MMMM CC  C  CC  C    TT   RR RR LL     ",
+        "  MM MMM MM CC     CC       TT   RRRR  LL     ",
+        "  MM  M  MM CC  C  CC  C    TT   RR RR LL     ",
+        "  MM     MM  CCCC    CCCC   TT   RR  R LLLLLL ",
+        "",
+        f"  GamerMahir07's MC Server Controller",
+        f"  Theme: {current_theme_name}  |  {datetime.now().strftime('%A, %B %d %Y  %H:%M')}",
+        f"  Auto-upload: {'ON' if auto_upload else 'OFF'}  |  Upload on stop: {'ON' if upload_on_stop else 'OFF'}",
+        "",
+    ]
+    for line in lines:
+        log(line)
+    if is_first_launch:
+        app.after(200, show_first_launch_dialog)
+
+app.after(300, _splash)
 app.mainloop()
