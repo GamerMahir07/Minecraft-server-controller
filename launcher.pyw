@@ -1,6 +1,7 @@
 import time
 import shutil
 import tkinter as tk
+import tkinter.filedialog as _tk_fd
 import matplotlib
 matplotlib.use("TkAgg")
 import customtkinter as ctk
@@ -10,6 +11,10 @@ import json
 import os
 import ctypes
 import re
+import urllib.request
+import urllib.error
+import importlib.util
+import sys
 from datetime import datetime
 import psutil
 
@@ -20,6 +25,16 @@ except ImportError:
     _DND_AVAILABLE = False
 
 CREATE_NO_WINDOW = 0x08000000
+
+# ── playit.gg globals ─────────────────────────────────────
+playit_proc      = None
+playit_tunnel    = None
+playit_log_lines = []
+_playit_addr_re  = re.compile(
+    r'([\w\-]+\.(?:at\.ply\.gg|playit\.gg)(?::\d+)?)', re.IGNORECASE)
+
+# ── App addon globals ──────────────────────────────────────
+_loaded_addons   = {}   # name -> module
 
 SRV_PATH  = r"C:\Users\DigitalComputer\Desktop\mc"
 JAVA_PATH = r"C:\Program Files\Eclipse Adoptium\jdk-21.0.10.7-hotspot\bin\java.exe"
@@ -217,7 +232,7 @@ def parse_server_line(raw):
 
 # ── App window ────────────────────────────────────────────
 app = ctk.CTk()
-app.title("MCSC")
+app.title("MC CTRL")
 app.geometry("1020x720")
 app.resizable(True, True)
 app.configure(fg_color=T["bg"])
@@ -641,7 +656,7 @@ def build_ui():
     # ── Top bar ───────────────────────────────────────────
     top = ctk.CTkFrame(app, fg_color=T["card"], corner_radius=0)
     top.pack(fill="x")
-    ctk.CTkLabel(top, text="MCSC",
+    ctk.CTkLabel(top, text="MC CTRL",
                  font=ctk.CTkFont(size=16, weight="bold"),
                  text_color=T["text"]).pack(side="left", padx=16, pady=10)
 
@@ -656,19 +671,19 @@ def build_ui():
     tm_menu.set(current_theme_name)
     tm_menu.pack(side="left", padx=(0, 6), pady=8)
 
-    # ⚙ Settings button in top bar
+    # ⚙ Settings button — opens floating window
     def open_settings_window():
         win = ctk.CTkToplevel(app)
-        win.title("Settings")
-        win.geometry("640x680")
+        win.title("Settings — MC CTRL")
+        win.geometry("700x700")
         win.resizable(True, True)
         win.configure(fg_color=T["bg"])
         win.grab_set()
         win.attributes("-topmost", True)
         try:
-            ax = app.winfo_x() + (app.winfo_width()  - 640) // 2
-            ay = app.winfo_y() + (app.winfo_height() - 680) // 2
-            win.geometry(f"640x680+{ax}+{ay}")
+            ax = app.winfo_x() + (app.winfo_width()  - 700) // 2
+            ay = app.winfo_y() + (app.winfo_height() - 700) // 2
+            win.geometry(f"700x700+{ax}+{ay}")
         except: pass
         build_settings_tab(win)
 
@@ -676,7 +691,7 @@ def build_ui():
                   font=ctk.CTkFont(size=11), corner_radius=6,
                   fg_color=T["bg"], border_width=1, border_color=T["border"],
                   text_color=T["muted"], hover_color=T["border"],
-                  command=open_settings_window).pack(side="left", padx=(0, 8), pady=8)
+                  command=open_settings_window).pack(side="left", padx=(0,8), pady=8)
 
     status_dot = ctk.CTkLabel(top, text="●", font=ctk.CTkFont(size=13), text_color=T["stop"])
     status_dot.pack(side="right", padx=(0,14), pady=10)
@@ -694,21 +709,22 @@ def build_ui():
     dashboard_frame  = ctk.CTkFrame(tab_content, fg_color="transparent")
     network_frame    = ctk.CTkFrame(tab_content, fg_color="transparent")
     serverinfo_frame = ctk.CTkFrame(tab_content, fg_color="transparent")
+    playit_frame     = ctk.CTkFrame(tab_content, fg_color="transparent")
 
     tab_btns = {}
 
     def show_tab(name):
-        for f in [dashboard_frame, network_frame, serverinfo_frame]:
+        for f in [dashboard_frame, network_frame, serverinfo_frame, playit_frame]:
             f.pack_forget()
         for n, b in tab_btns.items():
             b.configure(fg_color="transparent", text_color=T["muted"])
         frames = {"dashboard": dashboard_frame, "network": network_frame,
-                  "serverinfo": serverinfo_frame}
+                  "serverinfo": serverinfo_frame, "playit": playit_frame}
         frames[name].pack(fill="both", expand=True)
         tab_btns[name].configure(fg_color=T["sync"], text_color="#000")
 
     for key, label in [("dashboard","Dashboard"), ("network","Network & IPs"),
-                       ("serverinfo","Server Info")]:
+                       ("serverinfo","Server Info"), ("playit","playit.gg")]:
         b = ctk.CTkButton(tab_bar, text=label, width=120, height=30,
                           font=ctk.CTkFont(size=12), corner_radius=6,
                           fg_color="transparent", text_color=T["muted"],
@@ -720,6 +736,7 @@ def build_ui():
     build_dashboard(dashboard_frame, is_fs)
     build_network_tab(network_frame)
     build_server_info_tab(serverinfo_frame)
+    build_playit_tab(playit_frame)
 
     show_tab("dashboard")
 
@@ -1427,9 +1444,467 @@ def build_server_info_tab(parent):
                                    if (var := props_vars.get(k)) is not None]
                   ).pack(side="right")
 
+
     ctk.CTkFrame(scroll, height=12, fg_color="transparent").pack()
 
-# ── Settings tab ──────────────────────────────────────────
+    # World Creation
+    _build_world_creation_section(scroll)
+    ctk.CTkFrame(scroll, height=12, fg_color="transparent").pack()
+
+# ── World Creation ─────────────────────────────────────────
+def _build_world_creation_section(scroll):
+    def _card(title):
+        f = ctk.CTkFrame(scroll, fg_color=T["card"], border_color=T["border"],
+                         border_width=1, corner_radius=10)
+        f.pack(fill="x", padx=20, pady=(10,0))
+        h = ctk.CTkFrame(f, fg_color="transparent"); h.pack(fill="x", padx=14, pady=(10,4))
+        ctk.CTkLabel(h, text=title, font=ctk.CTkFont(size=12, weight="bold"),
+                     text_color=T["text"]).pack(side="left")
+        ctk.CTkFrame(f, height=1, fg_color=T["border"]).pack(fill="x", padx=14)
+        body = ctk.CTkFrame(f, fg_color="transparent"); body.pack(fill="x", padx=14, pady=(6,12))
+        return body, h
+
+    wcb, wch = _card("World Creation & Server Setup")
+    ctk.CTkLabel(wcb, text=(
+        "Pick server software — Paper/Purpur/Vanilla are auto-downloaded.\n"
+        "Existing world folders are backed up with a timestamp before any changes."
+    ), font=ctk.CTkFont(size=11), text_color=T["muted"], wraplength=780, justify="left"
+    ).pack(anchor="w", pady=(0,8))
+
+    r0 = ctk.CTkFrame(wcb, fg_color="transparent"); r0.pack(fill="x", pady=(0,6))
+    ctk.CTkLabel(r0, text="Server Software", font=ctk.CTkFont(size=12),
+                 text_color=T["text"], width=140, anchor="w").pack(side="left")
+    software_var = ctk.StringVar(value="Paper")
+    ctk.CTkOptionMenu(r0, values=["Paper","Purpur","Vanilla","Fabric (manual)"],
+                      variable=software_var, font=ctk.CTkFont(size=12), width=200,
+                      fg_color=T["bg"], button_color=T["border"], button_hover_color=T["muted"],
+                      text_color=T["text"], dropdown_fg_color=T["card"],
+                      dropdown_text_color=T["text"], dropdown_hover_color=T["border"]
+                      ).pack(side="left", padx=(0,20))
+    ctk.CTkLabel(r0, text="MC Version", font=ctk.CTkFont(size=12),
+                 text_color=T["text"], width=90, anchor="w").pack(side="left")
+    mc_ver_var = ctk.StringVar(value="latest")
+    ctk.CTkEntry(r0, textvariable=mc_ver_var, width=120, height=30,
+                 font=ctk.CTkFont(size=12, family="Consolas"),
+                 fg_color=T["bg"], border_color=T["border"], text_color=T["text"],
+                 placeholder_text="e.g. 1.21.1").pack(side="left")
+
+    r1 = ctk.CTkFrame(wcb, fg_color="transparent"); r1.pack(fill="x", pady=(4,0))
+    ctk.CTkLabel(r1, text="World Name", font=ctk.CTkFont(size=12),
+                 text_color=T["text"], width=140, anchor="w").pack(side="left")
+    world_name_var = ctk.StringVar(value="world")
+    ctk.CTkEntry(r1, textvariable=world_name_var, width=160, height=30,
+                 font=ctk.CTkFont(size=12, family="Consolas"),
+                 fg_color=T["bg"], border_color=T["border"], text_color=T["text"]
+                 ).pack(side="left", padx=(0,20))
+    ctk.CTkLabel(r1, text="Seed (blank=random)", font=ctk.CTkFont(size=12),
+                 text_color=T["text"], width=160, anchor="w").pack(side="left")
+    seed_var = ctk.StringVar(value="")
+    ctk.CTkEntry(r1, textvariable=seed_var, width=160, height=30,
+                 font=ctk.CTkFont(size=12, family="Consolas"),
+                 fg_color=T["bg"], border_color=T["border"], text_color=T["text"],
+                 placeholder_text="e.g. 123456789").pack(side="left")
+
+    r2 = ctk.CTkFrame(wcb, fg_color="transparent"); r2.pack(fill="x", pady=(6,0))
+    ctk.CTkLabel(r2, text="Level Type", font=ctk.CTkFont(size=12),
+                 text_color=T["text"], width=140, anchor="w").pack(side="left")
+    level_type_var = ctk.StringVar(value="minecraft:normal")
+    ctk.CTkOptionMenu(r2, values=["minecraft:normal","minecraft:flat","minecraft:large_biomes",
+                                   "minecraft:amplified","minecraft:single_biome_surface"],
+                      variable=level_type_var, font=ctk.CTkFont(size=12), width=210,
+                      fg_color=T["bg"], button_color=T["border"], button_hover_color=T["muted"],
+                      text_color=T["text"], dropdown_fg_color=T["card"],
+                      dropdown_text_color=T["text"], dropdown_hover_color=T["border"]
+                      ).pack(side="left", padx=(0,16))
+    ctk.CTkLabel(r2, text="Game Mode", font=ctk.CTkFont(size=12),
+                 text_color=T["text"], width=90, anchor="w").pack(side="left")
+    gamemode_var = ctk.StringVar(value="survival")
+    ctk.CTkOptionMenu(r2, values=["survival","creative","adventure","spectator"],
+                      variable=gamemode_var, font=ctk.CTkFont(size=12), width=120,
+                      fg_color=T["bg"], button_color=T["border"], button_hover_color=T["muted"],
+                      text_color=T["text"], dropdown_fg_color=T["card"],
+                      dropdown_text_color=T["text"], dropdown_hover_color=T["border"]
+                      ).pack(side="left", padx=(0,16))
+    ctk.CTkLabel(r2, text="Difficulty", font=ctk.CTkFont(size=12),
+                 text_color=T["text"], width=70, anchor="w").pack(side="left")
+    diff_var = ctk.StringVar(value="normal")
+    ctk.CTkOptionMenu(r2, values=["peaceful","easy","normal","hard"],
+                      variable=diff_var, font=ctk.CTkFont(size=12), width=110,
+                      fg_color=T["bg"], button_color=T["border"], button_hover_color=T["muted"],
+                      text_color=T["text"], dropdown_fg_color=T["card"],
+                      dropdown_text_color=T["text"], dropdown_hover_color=T["border"]
+                      ).pack(side="left")
+
+    r3 = ctk.CTkFrame(wcb, fg_color="transparent"); r3.pack(fill="x", pady=(6,0))
+    hardcore_var   = ctk.BooleanVar(value=False)
+    structures_var = ctk.BooleanVar(value=True)
+    ctk.CTkCheckBox(r3, text="Hardcore", variable=hardcore_var,
+                    font=ctk.CTkFont(size=12), text_color=T["text"],
+                    checkmark_color="#000", fg_color=T["stop"],
+                    border_color=T["border"]).pack(side="left", padx=(0,20))
+    ctk.CTkCheckBox(r3, text="Generate Structures", variable=structures_var,
+                    font=ctk.CTkFont(size=12), text_color=T["text"],
+                    checkmark_color="#000", fg_color=T["sync"],
+                    border_color=T["border"]).pack(side="left")
+
+    wc_status_lbl = ctk.CTkLabel(wcb, text="", font=ctk.CTkFont(size=11), text_color=T["muted"])
+    wc_status_lbl.pack(anchor="w", pady=(8,0))
+    wc_prog = ctk.CTkProgressBar(wcb, height=6); wc_prog.set(0)
+
+    def _set_st(msg, color=None, prog=None):
+        try:
+            wc_status_lbl.configure(text=msg, text_color=color or T["muted"])
+            if prog is not None:
+                wc_prog.set(prog)
+                if prog > 0: wc_prog.pack(fill="x", pady=(4,0))
+                else: wc_prog.pack_forget()
+        except: pass
+
+    def _dl(url, dest, label):
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent":"MC-CTRL/1.0"})
+            with urllib.request.urlopen(req, timeout=120) as r:
+                total = int(r.headers.get("Content-Length", 0))
+                done = 0
+                with open(dest, "wb") as f:
+                    while True:
+                        chunk = r.read(65536)
+                        if not chunk: break
+                        f.write(chunk); done += len(chunk)
+                        if total:
+                            p = done/total
+                            app.after(0, lambda p=p,d=done,t=total: _set_st(
+                                f"{label}... {d//1048576}/{t//1048576} MB", T["sync"], p))
+            return True
+        except Exception as ex:
+            app.after(0, _set_st, f"Download failed: {ex}", T["stop"], 0)
+            return False
+
+    def _paper_url(ver):
+        base = "https://fill.papermc.io/v3/projects/paper"
+        try:
+            req = urllib.request.Request(base, headers={"User-Agent":"MC-CTRL/1.0"})
+            with urllib.request.urlopen(req, timeout=15) as r:
+                data = json.loads(r.read())
+            versions = [v for grp in data.get("version_groups",{}).values() for v in grp.get("versions",[])]
+            if ver == "latest": ver = versions[-1]
+            req2 = urllib.request.Request(f"{base}/versions/{ver}/builds", headers={"User-Agent":"MC-CTRL/1.0"})
+            with urllib.request.urlopen(req2, timeout=15) as r2:
+                builds = json.loads(r2.read())
+            stable = [b for b in builds if b.get("channel","").upper()=="STABLE"] or builds
+            return stable[-1]["downloads"]["server:default"]["url"], ver
+        except Exception as ex: return None, str(ex)
+
+    def _purpur_url(ver):
+        try:
+            req = urllib.request.Request("https://api.purpurmc.org/v2/purpur", headers={"User-Agent":"MC-CTRL/1.0"})
+            with urllib.request.urlopen(req, timeout=15) as r:
+                data = json.loads(r.read())
+            versions = data.get("versions",[])
+            if ver == "latest": ver = versions[-1]
+            return f"https://api.purpurmc.org/v2/purpur/{ver}/latest/download", ver
+        except Exception as ex: return None, str(ex)
+
+    def _vanilla_url(ver):
+        try:
+            with urllib.request.urlopen("https://launchermeta.mojang.com/mc/game/version_manifest.json", timeout=15) as r:
+                mf = json.loads(r.read())
+            if ver == "latest": ver = mf["latest"]["release"]
+            vi = next((v for v in mf["versions"] if v["id"]==ver), None)
+            if not vi: return None, f"Version {ver} not found"
+            with urllib.request.urlopen(vi["url"], timeout=15) as r2:
+                vd = json.loads(r2.read())
+            return vd["downloads"]["server"]["url"], ver
+        except Exception as ex: return None, str(ex)
+
+    def _do_create():
+        s = load_settings(); path = s.get("srv_path", SRV_PATH)
+        wname = world_name_var.get().strip() or "world"
+        seed  = seed_var.get().strip()
+        sw    = software_var.get()
+        mc_v  = mc_ver_var.get().strip() or "latest"
+        if server_proc and server_proc.poll() is None:
+            app.after(0, show_toast, "Stop the server first!", T["stop"])
+            app.after(0, _set_st, "Stop the server first.", T["stop"], 0); return
+        app.after(0, _set_st, "Resolving download URL...", T["sync"], 0.05)
+        if sw != "Fabric (manual)":
+            if sw == "Paper":    url, resolved = _paper_url(mc_v)
+            elif sw == "Purpur": url, resolved = _purpur_url(mc_v)
+            else:                url, resolved = _vanilla_url(mc_v)
+            if not url:
+                app.after(0, _set_st, f"Could not resolve: {resolved}", T["stop"], 0)
+                app.after(0, show_toast, "URL fetch failed.", T["stop"]); return
+            app.after(0, log, f"  Downloading {sw} {resolved}...")
+            jar_dest = os.path.join(path, "server.jar")
+            if not _dl(url, jar_dest, f"{sw} {resolved}"):
+                app.after(0, show_toast, "Download failed.", T["stop"]); return
+            app.after(0, log, f"  JAR saved -> {jar_dest}")
+        else:
+            app.after(0, _set_st, "Fabric: install manually.", T["muted"], 0)
+        try:
+            with open(os.path.join(path,"eula.txt"),"w") as ef: ef.write("eula=true\n")
+            app.after(0, log, "  eula.txt accepted.")
+        except: pass
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        for fld in [wname,f"{wname}_nether",f"{wname}_the_end","world","world_nether","world_the_end"]:
+            fp = os.path.join(path, fld)
+            if os.path.isdir(fp):
+                try: shutil.copytree(fp,f"{fp}_bak_{ts}"); app.after(0,log,f"  Backed up: {fld}")
+                except Exception as ex: app.after(0,log,f"  Backup err {fld}: {ex}")
+        for fld in [wname,f"{wname}_nether",f"{wname}_the_end"]:
+            fp = os.path.join(path, fld)
+            if os.path.isdir(fp):
+                try: shutil.rmtree(fp); app.after(0,log,f"  Deleted old: {fld}")
+                except Exception as ex: app.after(0,log,f"  Delete err: {ex}")
+        prop_file = os.path.join(path,"server.properties")
+        patches = {"level-name":wname,"level-seed":seed,"level-type":level_type_var.get(),
+                   "gamemode":gamemode_var.get(),"difficulty":diff_var.get(),
+                   "hardcore":str(hardcore_var.get()).lower(),
+                   "generate-structures":str(structures_var.get()).lower()}
+        try:
+            lines_in = open(prop_file,encoding="utf-8").readlines() if os.path.exists(prop_file) else []
+            new_lines=[]; written=set()
+            for line in lines_in:
+                s2=line.strip()
+                if s2.startswith("#") or "=" not in s2: new_lines.append(line); continue
+                k=s2.split("=",1)[0].strip()
+                if k in patches: new_lines.append(f"{k}={patches[k]}\n"); written.add(k)
+                else: new_lines.append(line)
+            for k,v in patches.items():
+                if k not in written: new_lines.append(f"{k}={v}\n")
+            open(prop_file,"w",encoding="utf-8").writelines(new_lines)
+            app.after(0,log,"  server.properties updated.")
+        except Exception as ex:
+            app.after(0,_set_st,f"Properties error: {ex}",T["stop"],0); return
+        app.after(0,_set_st,f"Done! Start the server to generate world '{wname}'.",T["start"],1.0)
+        app.after(0,show_toast,f"World '{wname}' configured!",T["start"])
+        app.after(0,log,f"-- World creation done: {sw} '{wname}' seed='{seed or 'random'}' --")
+
+    ctk.CTkButton(wch, text="Download & Create World", height=28, corner_radius=6,
+                  font=ctk.CTkFont(size=11, weight="bold"),
+                  fg_color=T["start"], hover_color=T["start"], text_color="#000",
+                  command=lambda: threading.Thread(target=_do_create, daemon=True).start()
+                  ).pack(side="right")
+
+# ── Addon loader ───────────────────────────────────────────
+def _load_addon(path):
+    global _loaded_addons
+    name = os.path.splitext(os.path.basename(path))[0]
+    try:
+        spec = importlib.util.spec_from_file_location(name, path)
+        mod  = importlib.util.module_from_spec(spec)
+        sys.modules[name] = mod
+        spec.loader.exec_module(mod)
+        if hasattr(mod, "setup"):
+            ctx = {"app":app,"T":T,"log":log,"show_toast":show_toast,
+                   "send_server_cmd":send_server_cmd,"load_settings":load_settings}
+            mod.setup(ctx)
+        _loaded_addons[name] = mod
+        log(f"  Addon loaded: {name}")
+    except Exception as ex:
+        log(f"  Addon error [{name}]: {ex}")
+        show_toast(f"Addon '{name}' failed: {ex}", T["stop"])
+
+def _load_all_addons():
+    addon_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "addons")
+    os.makedirs(addon_dir, exist_ok=True)
+    readme = os.path.join(addon_dir, "README.md")
+    if not os.path.exists(readme):
+        open(readme,"w").write("""# MC CTRL Addon API
+
+Addons are .py files in this folder, loaded at startup.
+
+## Minimal addon
+
+```python
+def setup(ctx):
+    ctx["log"]("Hello from my addon!")
+```
+
+## Context keys
+- ctx["app"]              — CTk root window
+- ctx["T"]               — theme colour dict
+- ctx["log"](msg)        — write to server log
+- ctx["show_toast"](m,c) — show a toast notification
+- ctx["send_server_cmd"] — send command to running MC server
+- ctx["load_settings"]   — returns settings dict
+""")
+    try:
+        for s in sorted(os.listdir(addon_dir)):
+            if s.endswith(".py"):
+                _load_addon(os.path.join(addon_dir, s))
+    except: pass
+
+# ── playit.gg tab ──────────────────────────────────────────
+def build_playit_tab(parent):
+    global playit_proc, playit_tunnel, playit_log_lines
+
+    scroll = ctk.CTkScrollableFrame(parent, fg_color="transparent")
+    scroll.pack(fill="both", expand=True)
+
+    def _card(title, subtitle=None):
+        f = ctk.CTkFrame(scroll, fg_color=T["card"], border_color=T["border"],
+                         border_width=1, corner_radius=10)
+        f.pack(fill="x", padx=20, pady=(10,0))
+        h = ctk.CTkFrame(f, fg_color="transparent"); h.pack(fill="x", padx=14, pady=(10,4))
+        ctk.CTkLabel(h, text=title, font=ctk.CTkFont(size=12, weight="bold"),
+                     text_color=T["text"]).pack(side="left")
+        if subtitle:
+            ctk.CTkLabel(h, text=subtitle, font=ctk.CTkFont(size=10),
+                         text_color=T["muted"]).pack(side="left", padx=8)
+        ctk.CTkFrame(f, height=1, fg_color=T["border"]).pack(fill="x", padx=14)
+        body = ctk.CTkFrame(f, fg_color="transparent"); body.pack(fill="x", padx=14, pady=(8,12))
+        return body, h
+
+    ab, _ = _card("What is playit.gg?")
+    ctk.CTkLabel(ab, text=(
+        "playit.gg is a free tunnel that gives your server a public address without port forwarding\n"
+        "or exposing your home IP. Friends connect via a .ply.gg address.\n\n"
+        "Free: up to 3 tunnels  |  Premium ~$3/mo: regional routing & custom domains."
+    ), font=ctk.CTkFont(size=12), text_color=T["muted"], wraplength=840, justify="left"
+    ).pack(anchor="w")
+
+    sb, sh = _card("Setup", "one-time")
+    s = load_settings()
+    playit_path_var = ctk.StringVar(value=s.get("playit_path",""))
+    def _save_pt(*_): update_setting("playit_path", playit_path_var.get())
+    playit_path_var.trace_add("write", _save_pt)
+
+    pt_status_lbl = ctk.CTkLabel(sb, text="", font=ctk.CTkFont(size=11), text_color=T["muted"])
+    def _set_pt_st(msg, color):
+        try: pt_status_lbl.configure(text=msg, text_color=color)
+        except: pass
+
+    def _browse_pt():
+        p = _tk_fd.askopenfilename(title="Select playit.exe",
+                                   filetypes=[("Executables","*.exe"),("All","*.*")])
+        if p: playit_path_var.set(p)
+
+    def _dl_playit():
+        dest = os.path.join(os.path.dirname(os.path.abspath(__file__)),"playit.exe")
+        _set_pt_st("Downloading playit.exe...", T["sync"])
+        def _do():
+            url = "https://github.com/playit-cloud/playit-agent/releases/latest/download/playit-windows.exe"
+            try:
+                req = urllib.request.Request(url, headers={"User-Agent":"MC-CTRL/1.0"})
+                with urllib.request.urlopen(req, timeout=120) as r:
+                    with open(dest,"wb") as f: f.write(r.read())
+                playit_path_var.set(dest)
+                update_setting("playit_path", dest)
+                app.after(0, _set_pt_st, "Downloaded!", T["start"])
+                app.after(0, show_toast, "playit.exe downloaded!", T["start"])
+            except Exception as ex:
+                app.after(0, _set_pt_st, f"Failed: {ex}", T["stop"])
+        threading.Thread(target=_do, daemon=True).start()
+
+    pr = ctk.CTkFrame(sb, fg_color="transparent"); pr.pack(fill="x", pady=(0,6))
+    ctk.CTkLabel(pr, text="playit.exe", font=ctk.CTkFont(size=12),
+                 text_color=T["text"], width=100, anchor="w").pack(side="left")
+    ctk.CTkEntry(pr, textvariable=playit_path_var, height=30,
+                 font=ctk.CTkFont(size=11, family="Consolas"),
+                 fg_color=T["bg"], border_color=T["border"], text_color=T["text"],
+                 placeholder_text="path\\to\\playit.exe"
+                 ).pack(side="left", fill="x", expand=True, padx=(0,8))
+    ctk.CTkButton(pr, text="Browse", width=70, height=30, font=ctk.CTkFont(size=11),
+                  fg_color="transparent", border_width=1, border_color=T["border"],
+                  text_color=T["muted"], hover_color=T["border"],
+                  command=_browse_pt).pack(side="left", padx=(0,6))
+    ctk.CTkButton(pr, text="Auto-Download", height=30, font=ctk.CTkFont(size=11),
+                  fg_color=T["sync"], hover_color=T["sync"], text_color="#000",
+                  command=_dl_playit).pack(side="left")
+    pt_status_lbl.pack(anchor="w", pady=(4,0))
+    ctk.CTkLabel(sb, text="On first run, open the claim URL in the log to link your account.",
+                 font=ctk.CTkFont(size=10), text_color=T["muted"]).pack(anchor="w")
+
+    cb, ch = _card("Tunnel Control")
+    tun_st = ctk.CTkLabel(cb, text="● Stopped", font=ctk.CTkFont(size=13, weight="bold"),
+                           text_color=T["stop"]); tun_st.pack(side="left")
+    tun_addr = ctk.CTkLabel(cb, text="", font=ctk.CTkFont(size=13, family="Consolas"),
+                             text_color=T["start"]); tun_addr.pack(side="left", padx=(14,0))
+
+    def _set_tst(msg, col):
+        try: tun_st.configure(text=msg, text_color=col)
+        except: pass
+    def _set_addr(addr):
+        global playit_tunnel; playit_tunnel = addr
+        try:
+            tun_addr.configure(text=addr or "")
+            if addr: show_toast(f"Tunnel: {addr}", T["start"])
+        except: pass
+    def _append_ptlog(line):
+        try:
+            pt_log.configure(state="normal"); pt_log.insert("end", line+"\n")
+            pt_log.configure(state="disabled"); pt_log.see("end")
+        except: pass
+    def _read_pt(proc):
+        for raw in iter(proc.stdout.readline, ""):
+            if not raw: break
+            line = raw.strip()
+            playit_log_lines.append(line)
+            if len(playit_log_lines)>500: playit_log_lines[:]=playit_log_lines[-500:]
+            m = _playit_addr_re.search(line)
+            if m: app.after(0, _set_addr, m.group(1))
+            app.after(0, _append_ptlog, line)
+        app.after(0, _set_tst, "● Stopped", T["stop"])
+    def _start_pt():
+        global playit_proc
+        exe = playit_path_var.get().strip()
+        if not exe or not os.path.exists(exe): show_toast("Set playit.exe path first!",T["stop"]); return
+        if playit_proc and playit_proc.poll() is None: show_toast("Already running.",T["muted"]); return
+        try:
+            playit_proc = subprocess.Popen([exe], stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                           text=True, bufsize=1, creationflags=CREATE_NO_WINDOW)
+            _set_tst("● Running", T["start"]); log("-- playit.gg started --")
+            threading.Thread(target=_read_pt, args=(playit_proc,), daemon=True).start()
+        except Exception as ex: show_toast(f"Failed: {ex}",T["stop"]); _set_tst("● Error",T["stop"])
+    def _stop_pt():
+        global playit_proc, playit_tunnel
+        if playit_proc:
+            try: playit_proc.terminate()
+            except: pass
+            playit_proc = None
+        playit_tunnel = None; _set_addr(""); _set_tst("● Stopped", T["stop"])
+        log("-- playit.gg stopped --")
+    def _copy_addr():
+        addr = tun_addr.cget("text")
+        if addr: app.clipboard_clear(); app.clipboard_append(addr); show_toast(f"Copied: {addr}",T["sync"])
+        else: show_toast("No address yet.",T["muted"])
+
+    br = ctk.CTkFrame(ch, fg_color="transparent"); br.pack(side="right")
+    ctk.CTkButton(br,text="▶ Start",width=74,height=26,font=ctk.CTkFont(size=11),
+                  fg_color=T["start"],hover_color=T["start"],text_color="#000",
+                  command=_start_pt).pack(side="left",padx=(0,4))
+    ctk.CTkButton(br,text="■ Stop",width=74,height=26,font=ctk.CTkFont(size=11),
+                  fg_color=T["stop"],hover_color=T["stop"],text_color="#fff",
+                  command=_stop_pt).pack(side="left",padx=(0,4))
+    ctk.CTkButton(br,text="Copy Address",width=100,height=26,font=ctk.CTkFont(size=11),
+                  fg_color=T["sync"],hover_color=T["sync"],text_color="#000",
+                  command=_copy_addr).pack(side="left")
+
+    lb, lh = _card("Agent Log")
+    pt_log = ctk.CTkTextbox(lb, font=ctk.CTkFont(size=11,family="Consolas"),
+                             wrap="word", state="disabled", height=220,
+                             fg_color=T["bg"], text_color=T["text"]); pt_log.pack(fill="x")
+    ctk.CTkButton(lh,text="Clear",width=58,height=22,font=ctk.CTkFont(size=10),
+                  fg_color="transparent",border_width=1,border_color=T["border"],
+                  text_color=T["muted"],hover_color=T["border"],
+                  command=lambda:(pt_log.configure(state="normal"),
+                                  pt_log.delete("1.0","end"),
+                                  pt_log.configure(state="disabled"))).pack(side="right")
+
+    gb, _ = _card("How to Use")
+    ctk.CTkLabel(gb, text=(
+        "1.  Click Auto-Download to grab the playit agent (or browse to an existing playit.exe).\n"
+        "2.  Click Start — a claim URL appears in the log on first run. Open it in your browser.\n"
+        "3.  Log in / create a free account and click Continue to link this agent.\n"
+        "4.  playit creates a Minecraft tunnel automatically. The address shows above.\n"
+        "5.  Share that address with friends — no port forwarding needed!\n"
+        "6.  Click Stop to shut the tunnel down."
+    ), font=ctk.CTkFont(size=12), text_color=T["muted"], justify="left", wraplength=840
+    ).pack(anchor="w")
+    ctk.CTkFrame(scroll, height=12, fg_color="transparent").pack()
+
+# ── Settings tab ─────────────────────────────────────────
 def build_settings_tab(parent):
     scroll = ctk.CTkScrollableFrame(parent, fg_color="transparent")
     scroll.pack(fill="both", expand=True, padx=20, pady=12)
@@ -1521,6 +1996,259 @@ def build_settings_tab(parent):
     row(b, "Upload interval (minutes)", mins_fn)
     row(b, "Upload world to GitHub on server stop",
         lambda p: sw(p, lambda: upload_on_stop, lambda v: _set_upload_on_stop(v)))
+
+    # ── Plugins Manager (MC CTRL app addons) ──────────────
+    b = section("Server Plugins Manager")
+
+    def _get_plugins_dir():
+        return os.path.join(load_settings().get("srv_path", SRV_PATH), "plugins")
+
+    plug_list_frame = ctk.CTkFrame(b, fg_color=T["bg"], border_color=T["border"],
+                                   border_width=1, corner_radius=8)
+    plug_list_frame.pack(fill="x", pady=(0,6))
+
+    def _refresh_plug():
+        for w in plug_list_frame.winfo_children(): w.destroy()
+        pd = _get_plugins_dir()
+        try: jars = sorted([x for x in os.listdir(pd) if x.endswith(".jar")])
+        except: jars = []
+        if not jars:
+            ctk.CTkLabel(plug_list_frame, text="No server plugins installed.",
+                         font=ctk.CTkFont(size=11), text_color=T["muted"]).pack(padx=14, pady=8)
+        else:
+            for j in jars:
+                pr = ctk.CTkFrame(plug_list_frame, fg_color="transparent")
+                pr.pack(fill="x", padx=10, pady=3)
+                ctk.CTkLabel(pr, text=j.replace(".jar",""),
+                             font=ctk.CTkFont(size=12), text_color=T["text"]).pack(side="left")
+                def _rem(n=j):
+                    try:
+                        os.remove(os.path.join(_get_plugins_dir(), n))
+                        show_toast(f"Removed {n}", T["stop"])
+                        _refresh_plug()
+                    except Exception as ex: show_toast(f"Error: {ex}", T["stop"])
+                ctk.CTkButton(pr, text="Remove", width=64, height=22,
+                              font=ctk.CTkFont(size=10), fg_color="transparent",
+                              border_width=1, border_color=T["stop"],
+                              text_color=T["stop"], hover_color=T["border"],
+                              command=_rem).pack(side="right")
+
+    def _add_server_plugin():
+        pd = _get_plugins_dir(); os.makedirs(pd, exist_ok=True)
+        paths = _tk_fd.askopenfilenames(title="Select plugin JAR(s)",
+                                        filetypes=[("JAR","*.jar"),("All","*.*")])
+        if not paths: return
+        for p in paths:
+            try: shutil.copy2(p, os.path.join(pd, os.path.basename(p)))
+            except Exception as ex: show_toast(f"Failed: {ex}", T["stop"])
+        show_toast(f"{len(paths)} plugin(s) added!", T["start"])
+        _refresh_plug()
+
+    _refresh_plug()
+    pr2 = ctk.CTkFrame(b, fg_color="transparent"); pr2.pack(fill="x", pady=(4,0))
+    ctk.CTkButton(pr2, text="+ Add Plugin JAR(s)", height=30, corner_radius=6,
+                  font=ctk.CTkFont(size=12), fg_color=T["start"],
+                  hover_color=T["start"], text_color="#000",
+                  command=_add_server_plugin).pack(side="left")
+    ctk.CTkButton(pr2, text="Refresh", height=30, corner_radius=6,
+                  font=ctk.CTkFont(size=12), fg_color="transparent",
+                  border_width=1, border_color=T["border"],
+                  text_color=T["muted"], hover_color=T["border"],
+                  command=_refresh_plug).pack(side="left", padx=(8,0))
+    ctk.CTkLabel(b, text="Restart the server after adding or removing plugins.",
+                 font=ctk.CTkFont(size=10), text_color=T["muted"]).pack(anchor="w", pady=(4,0))
+
+    # ── MC CTRL App Addons ─────────────────────────────────
+    b = section("MC CTRL App Addons")
+    ctk.CTkLabel(b, text=(
+        "Addons are custom Python scripts (.py) that anyone can write to extend MC CTRL.\n"
+        "Each addon is loaded at startup. Addons can add new UI panels, commands, or automations."
+    ), font=ctk.CTkFont(size=11), text_color=T["muted"],
+       wraplength=580, justify="left").pack(anchor="w", pady=(0,6))
+
+    addon_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "addons")
+    os.makedirs(addon_dir, exist_ok=True)
+
+    addon_list_frame = ctk.CTkFrame(b, fg_color=T["bg"], border_color=T["border"],
+                                    border_width=1, corner_radius=8)
+    addon_list_frame.pack(fill="x", pady=(0,6))
+
+    def _refresh_addons():
+        for w in addon_list_frame.winfo_children(): w.destroy()
+        try: scripts = sorted([x for x in os.listdir(addon_dir) if x.endswith(".py")])
+        except: scripts = []
+        if not scripts:
+            ctk.CTkLabel(addon_list_frame, text="No addons installed. Drop .py files in the addons/ folder.",
+                         font=ctk.CTkFont(size=11), text_color=T["muted"]).pack(padx=14, pady=8)
+        else:
+            for s in scripts:
+                ar = ctk.CTkFrame(addon_list_frame, fg_color="transparent")
+                ar.pack(fill="x", padx=10, pady=3)
+                loaded = s.replace(".py","") in _loaded_addons
+                dot = ctk.CTkLabel(ar, text="●", font=ctk.CTkFont(size=11),
+                                   text_color=T["start"] if loaded else T["muted"])
+                dot.pack(side="left", padx=(0,6))
+                ctk.CTkLabel(ar, text=s, font=ctk.CTkFont(size=12),
+                             text_color=T["text"]).pack(side="left")
+                ctk.CTkLabel(ar, text="loaded" if loaded else "not loaded",
+                             font=ctk.CTkFont(size=10),
+                             text_color=T["start"] if loaded else T["muted"]).pack(side="left", padx=8)
+                def _reload_addon(name=s):
+                    _load_addon(os.path.join(addon_dir, name))
+                    _refresh_addons()
+                def _remove_addon(name=s):
+                    try:
+                        os.remove(os.path.join(addon_dir, name))
+                        key = name.replace(".py","")
+                        _loaded_addons.pop(key, None)
+                        show_toast(f"Removed addon: {name}", T["stop"])
+                        _refresh_addons()
+                    except Exception as ex: show_toast(f"Error: {ex}", T["stop"])
+                ctk.CTkButton(ar, text="Reload", width=64, height=22,
+                              font=ctk.CTkFont(size=10), fg_color="transparent",
+                              border_width=1, border_color=T["sync"],
+                              text_color=T["sync"], hover_color=T["border"],
+                              command=_reload_addon).pack(side="right", padx=(4,0))
+                ctk.CTkButton(ar, text="Remove", width=64, height=22,
+                              font=ctk.CTkFont(size=10), fg_color="transparent",
+                              border_width=1, border_color=T["stop"],
+                              text_color=T["stop"], hover_color=T["border"],
+                              command=_remove_addon).pack(side="right")
+
+    _refresh_addons()
+
+    def _install_addon():
+        paths = _tk_fd.askopenfilenames(title="Select MC CTRL addon (.py)",
+                                        filetypes=[("Python scripts","*.py"),("All","*.*")])
+        if not paths: return
+        for p in paths:
+            dest = os.path.join(addon_dir, os.path.basename(p))
+            try:
+                shutil.copy2(p, dest)
+                _load_addon(dest)
+            except Exception as ex: show_toast(f"Failed: {ex}", T["stop"])
+        show_toast(f"{len(paths)} addon(s) installed!", T["start"])
+        _refresh_addons()
+
+    ar2 = ctk.CTkFrame(b, fg_color="transparent"); ar2.pack(fill="x", pady=(4,0))
+    ctk.CTkButton(ar2, text="+ Install Addon (.py)", height=30, corner_radius=6,
+                  font=ctk.CTkFont(size=12), fg_color=T["sync"],
+                  hover_color=T["sync"], text_color="#000",
+                  command=_install_addon).pack(side="left")
+    ctk.CTkButton(ar2, text="Open Addons Folder", height=30, corner_radius=6,
+                  font=ctk.CTkFont(size=12), fg_color="transparent",
+                  border_width=1, border_color=T["border"],
+                  text_color=T["muted"], hover_color=T["border"],
+                  command=lambda: os.startfile(addon_dir)).pack(side="left", padx=(8,0))
+    ctk.CTkButton(ar2, text="Refresh", height=30, corner_radius=6,
+                  font=ctk.CTkFont(size=12), fg_color="transparent",
+                  border_width=1, border_color=T["border"],
+                  text_color=T["muted"], hover_color=T["border"],
+                  command=_refresh_addons).pack(side="left", padx=(8,0))
+    ctk.CTkLabel(b, text=(
+        "Addon API: your script receives (app, T, log, show_toast, send_server_cmd, load_settings)\n"
+        "via a setup(ctx) function. See addons/README.md for the full API."
+    ), font=ctk.CTkFont(size=10), text_color=T["muted"],
+       wraplength=580, justify="left").pack(anchor="w", pady=(6,0))
+
+    # ── Server Plugins Manager ────────────────────────────
+    b = section("Server Plugins Manager")
+    def _get_pd(): return os.path.join(load_settings().get("srv_path",SRV_PATH),"plugins")
+    plf = ctk.CTkFrame(b, fg_color=T["bg"], border_color=T["border"], border_width=1, corner_radius=8)
+    plf.pack(fill="x", pady=(0,6))
+    def _ref_plug():
+        for w in plf.winfo_children(): w.destroy()
+        pd = _get_pd()
+        try: jars = sorted([x for x in os.listdir(pd) if x.endswith(".jar")])
+        except: jars = []
+        if not jars:
+            ctk.CTkLabel(plf,text="No server plugins installed.",font=ctk.CTkFont(size=11),text_color=T["muted"]).pack(padx=14,pady=8)
+        else:
+            for j in jars:
+                pr=ctk.CTkFrame(plf,fg_color="transparent"); pr.pack(fill="x",padx=10,pady=3)
+                ctk.CTkLabel(pr,text=j.replace(".jar",""),font=ctk.CTkFont(size=12),text_color=T["text"]).pack(side="left")
+                def _rem(n=j):
+                    try: os.remove(os.path.join(_get_pd(),n)); show_toast(f"Removed {n}",T["stop"]); _ref_plug()
+                    except Exception as ex: show_toast(f"Error: {ex}",T["stop"])
+                ctk.CTkButton(pr,text="Remove",width=64,height=22,font=ctk.CTkFont(size=10),fg_color="transparent",
+                              border_width=1,border_color=T["stop"],text_color=T["stop"],hover_color=T["border"],
+                              command=_rem).pack(side="right")
+    def _add_plug():
+        pd=_get_pd(); os.makedirs(pd,exist_ok=True)
+        paths=_tk_fd.askopenfilenames(title="Select plugin JAR(s)",filetypes=[("JAR","*.jar"),("All","*.*")])
+        if not paths: return
+        for p in paths:
+            try: shutil.copy2(p,os.path.join(pd,os.path.basename(p)))
+            except Exception as ex: show_toast(f"Failed: {ex}",T["stop"])
+        show_toast(f"{len(paths)} plugin(s) added!",T["start"]); _ref_plug()
+    _ref_plug()
+    plr=ctk.CTkFrame(b,fg_color="transparent"); plr.pack(fill="x",pady=(4,0))
+    ctk.CTkButton(plr,text="+ Add Plugin JAR(s)",height=30,corner_radius=6,font=ctk.CTkFont(size=12),
+                  fg_color=T["start"],hover_color=T["start"],text_color="#000",command=_add_plug).pack(side="left")
+    ctk.CTkButton(plr,text="Refresh",height=30,corner_radius=6,font=ctk.CTkFont(size=12),fg_color="transparent",
+                  border_width=1,border_color=T["border"],text_color=T["muted"],hover_color=T["border"],
+                  command=_ref_plug).pack(side="left",padx=(8,0))
+    ctk.CTkLabel(b,text="Restart the server after adding/removing plugins.",
+                 font=ctk.CTkFont(size=10),text_color=T["muted"]).pack(anchor="w",pady=(4,0))
+
+    # ── MC CTRL App Addons ─────────────────────────────────
+    b = section("MC CTRL App Addons")
+    ctk.CTkLabel(b,text=(
+        "Addons are custom Python (.py) scripts anyone can write to extend MC CTRL.\n"
+        "They are loaded at startup and can add new UI, commands, or automations."
+    ),font=ctk.CTkFont(size=11),text_color=T["muted"],wraplength=560,justify="left").pack(anchor="w",pady=(0,6))
+    addon_dir=os.path.join(os.path.dirname(os.path.abspath(__file__)),"addons")
+    os.makedirs(addon_dir,exist_ok=True)
+    alf=ctk.CTkFrame(b,fg_color=T["bg"],border_color=T["border"],border_width=1,corner_radius=8)
+    alf.pack(fill="x",pady=(0,6))
+    def _ref_addons():
+        for w in alf.winfo_children(): w.destroy()
+        try: scripts=sorted([x for x in os.listdir(addon_dir) if x.endswith(".py")])
+        except: scripts=[]
+        if not scripts:
+            ctk.CTkLabel(alf,text="No addons installed. Drop .py files in the addons/ folder.",
+                         font=ctk.CTkFont(size=11),text_color=T["muted"]).pack(padx=14,pady=8)
+        else:
+            for s in scripts:
+                ar=ctk.CTkFrame(alf,fg_color="transparent"); ar.pack(fill="x",padx=10,pady=3)
+                loaded=s.replace(".py","") in _loaded_addons
+                ctk.CTkLabel(ar,text="●",font=ctk.CTkFont(size=11),
+                             text_color=T["start"] if loaded else T["muted"]).pack(side="left",padx=(0,6))
+                ctk.CTkLabel(ar,text=s,font=ctk.CTkFont(size=12),text_color=T["text"]).pack(side="left")
+                ctk.CTkLabel(ar,text="loaded" if loaded else "not loaded",font=ctk.CTkFont(size=10),
+                             text_color=T["start"] if loaded else T["muted"]).pack(side="left",padx=8)
+                def _rel(n=s): _load_addon(os.path.join(addon_dir,n)); _ref_addons()
+                def _rem2(n=s):
+                    try:
+                        os.remove(os.path.join(addon_dir,n)); _loaded_addons.pop(n.replace(".py",""),None)
+                        show_toast(f"Removed {n}",T["stop"]); _ref_addons()
+                    except Exception as ex: show_toast(f"Error: {ex}",T["stop"])
+                ctk.CTkButton(ar,text="Reload",width=64,height=22,font=ctk.CTkFont(size=10),
+                              fg_color="transparent",border_width=1,border_color=T["sync"],
+                              text_color=T["sync"],hover_color=T["border"],command=_rel).pack(side="right",padx=(4,0))
+                ctk.CTkButton(ar,text="Remove",width=64,height=22,font=ctk.CTkFont(size=10),
+                              fg_color="transparent",border_width=1,border_color=T["stop"],
+                              text_color=T["stop"],hover_color=T["border"],command=_rem2).pack(side="right")
+    def _inst_addon():
+        paths=_tk_fd.askopenfilenames(title="Select MC CTRL Addon (.py)",filetypes=[("Python","*.py"),("All","*.*")])
+        if not paths: return
+        for p in paths:
+            dest=os.path.join(addon_dir,os.path.basename(p))
+            try: shutil.copy2(p,dest); _load_addon(dest)
+            except Exception as ex: show_toast(f"Failed: {ex}",T["stop"])
+        show_toast(f"{len(paths)} addon(s) installed!",T["start"]); _ref_addons()
+    _ref_addons()
+    alr=ctk.CTkFrame(b,fg_color="transparent"); alr.pack(fill="x",pady=(4,0))
+    ctk.CTkButton(alr,text="+ Install Addon (.py)",height=30,corner_radius=6,font=ctk.CTkFont(size=12),
+                  fg_color=T["sync"],hover_color=T["sync"],text_color="#000",command=_inst_addon).pack(side="left")
+    ctk.CTkButton(alr,text="Open Addons Folder",height=30,corner_radius=6,font=ctk.CTkFont(size=12),
+                  fg_color="transparent",border_width=1,border_color=T["border"],text_color=T["muted"],
+                  hover_color=T["border"],command=lambda:os.startfile(addon_dir)).pack(side="left",padx=(8,0))
+    ctk.CTkButton(alr,text="Refresh",height=30,corner_radius=6,font=ctk.CTkFont(size=12),
+                  fg_color="transparent",border_width=1,border_color=T["border"],text_color=T["muted"],
+                  hover_color=T["border"],command=_ref_addons).pack(side="left",padx=(8,0))
+    ctk.CTkLabel(b,text="Addon API: your script's setup(ctx) receives app, T, log, show_toast, send_server_cmd, load_settings.",
+                 font=ctk.CTkFont(size=10),text_color=T["muted"],wraplength=560,justify="left").pack(anchor="w",pady=(6,0))
 
     # About
     b = section("Setup & About")
@@ -1633,13 +2361,14 @@ if auto_upload: schedule_auto_upload()
 def _splash():
     lines = [
         "",
-        "  ██  ████  ██  ██ ████  ████  ████ ██████",
-        "  ██ ██  ██ ██  ██ ██   ██  ██ ██  ██  ██ ",
-        "  ██ ██  ██ ██  ██ ████ ██████ ██  ██  ██ ",
-        "  ██ ██  ██ ██  ██ ██   ██  ██ ██  ██  ██ ",
-        "  ██  ████   ████  ████ ██  ██ ████    ██ ",
+        "  ███╗   ███╗ ██████╗      ██████╗████████╗██████╗ ██╗     ",
+        "  ████╗ ████║██╔════╝     ██╔════╝╚══██╔══╝██╔══██╗██║     ",
+        "  ██╔████╔██║██║          ██║        ██║   ██████╔╝██║     ",
+        "  ██║╚██╔╝██║██║          ██║        ██║   ██╔══██╗██║     ",
+        "  ██║ ╚═╝ ██║╚██████╗     ╚██████╗   ██║   ██║  ██║███████╗",
+        "  ╚═╝     ╚═╝ ╚═════╝      ╚═════╝   ╚═╝   ╚═╝  ╚═╝╚══════╝",
         "",
-        f"  GamerMahir07's MCSC — Minecraft Server Controller",
+        f"  GamerMahir07's MC CTRL — Minecraft Server Controller",
         f"  Theme: {current_theme_name}  |  {datetime.now().strftime('%A, %B %d %Y  %H:%M')}",
         f"  Auto-upload: {'ON' if auto_upload else 'OFF'}  |  Upload on stop: {'ON' if upload_on_stop else 'OFF'}",
         "",
@@ -1647,5 +2376,6 @@ def _splash():
     for line in lines: log(line)
     if is_first_launch: app.after(200, show_first_launch_dialog)
 
+_load_all_addons()
 app.after(300, _splash)
 app.mainloop()
