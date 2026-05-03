@@ -2,8 +2,7 @@ import time
 import shutil
 import tkinter as tk
 import tkinter.filedialog as _tk_fd
-import matplotlib
-matplotlib.use("TkAgg")
+# matplotlib removed (unused) — was causing slow startup
 import customtkinter as ctk
 import subprocess
 import threading
@@ -41,39 +40,102 @@ JAVA_PATH = r"C:\Program Files\Eclipse Adoptium\jdk-21.0.10.7-hotspot\bin\java.e
 REPO_URL  = "https://github.com/GamerMahir07/minecraft-server.git"
 
 THEMES = {
-    "Dark (Default)": {"appearance":"dark", "bg":"#0d0d0d","card":"#1a1a1a","border":"#2a2a2a","text":"#e0e0e0","muted":"#555555","start":"#22c55e","stop":"#ef4444","sync":"#60a5fa","handoff":"#f59e0b"},
-    "Midnight Blue":  {"appearance":"dark", "bg":"#0a0f1e","card":"#111827","border":"#1e3a5f","text":"#e2e8f0","muted":"#4a6080","start":"#34d399","stop":"#f87171","sync":"#818cf8","handoff":"#fbbf24"},
-    "Light":          {"appearance":"light","bg":"#f5f5f5","card":"#ffffff","border":"#e0e0e0","text":"#1a1a1a","muted":"#888888","start":"#16a34a","stop":"#dc2626","sync":"#2563eb","handoff":"#d97706"},
-    "Creeper Green":  {"appearance":"dark", "bg":"#0a1a0a","card":"#0f2a0f","border":"#1a4a1a","text":"#c8f0c8","muted":"#3a6a3a","start":"#4ade80","stop":"#f87171","sync":"#86efac","handoff":"#fde047"},
-    "Nether Red":     {"appearance":"dark", "bg":"#000000","card":"#1a0000","border":"#6a0000","text":"#ff4444","muted":"#8b0000","start":"#ff6b6b","stop":"#ff0000","sync":"#ff8c8c","handoff":"#ffd700"},
-    # Ocean is now a fresh light-cyan theme
-    "Ocean":          {"appearance":"light","bg":"#e0f7ff","card":"#ffffff","border":"#7dd3f0","text":"#003a52","muted":"#4a8fa8","start":"#0284c7","stop":"#e11d48","sync":"#0ea5e9","handoff":"#f59e0b"},
-    "Sunset":         {"appearance":"light","bg":"#fff7ed","card":"#ffffff","border":"#fed7aa","text":"#1c0a00","muted":"#9a6030","start":"#16a34a","stop":"#e11d48","sync":"#7c3aed","handoff":"#ea580c"},
-    "Obsidian":       {"appearance":"dark", "bg":"#080808","card":"#101010","border":"#1e1e2e","text":"#cdd6f4","muted":"#45475a","start":"#a6e3a1","stop":"#f38ba8","sync":"#89b4fa","handoff":"#fab387"},
-    "Ender Night":    {"appearance":"dark", "bg":"#000000","card":"#0d0010","border":"#3b0060","text":"#e8b4ff","muted":"#6a2a8a","start":"#bf7fff","stop":"#ff5f87","sync":"#d68fff","handoff":"#ffb347"},
-    "Arctic":         {"appearance":"light","bg":"#eef4fb","card":"#ffffff","border":"#b8d4f0","text":"#0d2137","muted":"#6a90b0","start":"#0ea5e9","stop":"#e11d48","sync":"#6366f1","handoff":"#f59e0b"},
-    "Forest":         {"appearance":"dark", "bg":"#0d1a0d","card":"#142414","border":"#254025","text":"#d4edda","muted":"#4a7a4a","start":"#86efac","stop":"#fca5a5","sync":"#6ee7b7","handoff":"#fde68a"},
-    "Rose Gold":      {"appearance":"light","bg":"#fff0f3","card":"#ffffff","border":"#f4c2cb","text":"#3a0a14","muted":"#b06070","start":"#e11d48","stop":"#9f1239","sync":"#db2777","handoff":"#c2410c"},
-    "Dracula":        {"appearance":"dark", "bg":"#282a36","card":"#313442","border":"#44475a","text":"#f8f8f2","muted":"#6272a4","start":"#50fa7b","stop":"#ff5555","sync":"#8be9fd","handoff":"#ffb86c"},
-    "Lava":           {"appearance":"dark", "bg":"#120500","card":"#1e0a00","border":"#5a1a00","text":"#ffe8d0","muted":"#7a3a10","start":"#ff7c00","stop":"#ff3300","sync":"#ffaa00","handoff":"#ffdd00"},
-    "Sand":           {"appearance":"light","bg":"#f5e6c8","card":"#fdf3e0","border":"#c8a96e","text":"#3d2b00","muted":"#8a6a30","start":"#5a8a00","stop":"#c0392b","sync":"#1a6b8a","handoff":"#c07000"},
-    "Void":           {"appearance":"dark", "bg":"#000000","card":"#0a0a0a","border":"#1a1a1a","text":"#aaaaaa","muted":"#333333","start":"#444444","stop":"#666666","sync":"#555555","handoff":"#777777"},
-    "Carbon":         {"appearance":"dark", "bg":"#1a1a2e","card":"#16213e","border":"#0f3460","text":"#e0e0e0","muted":"#4a4a6a","start":"#00c896","stop":"#e94560","sync":"#4d9fff","handoff":"#f5a623"},
-    "Lavender":       {"appearance":"light","bg":"#f0eeff","card":"#ffffff","border":"#c5b8ff","text":"#1a0050","muted":"#7060a0","start":"#5b21b6","stop":"#db2777","sync":"#4f46e5","handoff":"#d97706"},
-    "Mocha":          {"appearance":"dark", "bg":"#1c1410","card":"#2a1f18","border":"#4a3428","text":"#f0dece","muted":"#7a5a48","start":"#c8a86e","stop":"#e05050","sync":"#90b8d0","handoff":"#e8c060"},
-    "Sakura":         {"appearance":"light","bg":"#fff0f5","card":"#ffffff","border":"#ffb8cc","text":"#3a0020","muted":"#c06080","start":"#be185d","stop":"#e11d48","sync":"#9d174d","handoff":"#f59e0b"},
-    "Matrix":         {"appearance":"dark", "bg":"#000000","card":"#001400","border":"#004400","text":"#00ff41","muted":"#006600","start":"#00ff41","stop":"#ff0000","sync":"#00cc33","handoff":"#ffff00"},
-    "Nord":           {"appearance":"dark", "bg":"#2e3440","card":"#3b4252","border":"#434c5e","text":"#eceff4","muted":"#4c566a","start":"#a3be8c","stop":"#bf616a","sync":"#88c0d0","handoff":"#ebcb8b"},
-    "Solarized":      {"appearance":"light","bg":"#fdf6e3","card":"#eee8d5","border":"#93a1a1","text":"#073642","muted":"#657b83","start":"#859900","stop":"#dc322f","sync":"#268bd2","handoff":"#b58900"},
-    "Gruvbox":        {"appearance":"dark", "bg":"#282828","card":"#3c3836","border":"#504945","text":"#ebdbb2","muted":"#7c6f64","start":"#b8bb26","stop":"#fb4934","sync":"#83a598","handoff":"#fabd2f"},
-    "CB: Blue & Orange":      {"appearance":"light","bg":"#f7f7f7","card":"#ffffff","border":"#cccccc","text":"#000000","muted":"#767676","start":"#0072b2","stop":"#d55e00","sync":"#56b4e9","handoff":"#e69f00"},
-    "CB: Dark Blue & Orange": {"appearance":"dark", "bg":"#111111","card":"#1e1e1e","border":"#333333","text":"#ffffff","muted":"#888888","start":"#56b4e9","stop":"#d55e00","sync":"#0072b2","handoff":"#e69f00"},
-    "CB: Green & Purple":     {"appearance":"light","bg":"#f5f5f5","card":"#ffffff","border":"#cccccc","text":"#000000","muted":"#767676","start":"#009e73","stop":"#cc79a7","sync":"#0072b2","handoff":"#f0e442"},
-    "CB: High Contrast":      {"appearance":"light","bg":"#ffffff","card":"#f0f0f0","border":"#000000","text":"#000000","muted":"#444444","start":"#0000ff","stop":"#ff0000","sync":"#007700","handoff":"#ff8800"},
-    "CB: Dark High Contrast": {"appearance":"dark", "bg":"#000000","card":"#1a1a1a","border":"#ffffff","text":"#ffffff","muted":"#aaaaaa","start":"#ffff00","stop":"#ff6600","sync":"#00ffff","handoff":"#ff99ff"},
-    "CB: Tol Muted":  {"appearance":"light","bg":"#f8f4f0","card":"#ffffff","border":"#bbaabb","text":"#221122","muted":"#887799","start":"#44aa99","stop":"#cc6677","sync":"#88ccee","handoff":"#ddcc77"},
-    "CB: Tol Dark":   {"appearance":"dark", "bg":"#221122","card":"#332244","border":"#554466","text":"#eeddff","muted":"#887799","start":"#44aa99","stop":"#cc6677","sync":"#88ccee","handoff":"#ddcc77"},
-    "CB: Monochrome": {"appearance":"light","bg":"#ffffff","card":"#f0f0f0","border":"#999999","text":"#000000","muted":"#666666","start":"#222222","stop":"#777777","sync":"#444444","handoff":"#555555"},
+    # ── Default ───────────────────────────────────────────
+    "Dark (Default)":            {"appearance":"dark", "bg":"#0d0d0d","card":"#1a1a1a","border":"#2a2a2a","text":"#e0e0e0","muted":"#555555","start":"#22c55e","stop":"#ef4444","sync":"#60a5fa","handoff":"#f59e0b"},
+    "Light (Default)":           {"appearance":"light","bg":"#f5f5f5","card":"#ffffff","border":"#e0e0e0","text":"#1a1a1a","muted":"#888888","start":"#16a34a","stop":"#dc2626","sync":"#2563eb","handoff":"#d97706"},
+    # ── Midnight Blue ─────────────────────────────────────
+    "Midnight Blue Dark":        {"appearance":"dark", "bg":"#0a0f1e","card":"#111827","border":"#1e3a5f","text":"#e2e8f0","muted":"#4a6080","start":"#34d399","stop":"#f87171","sync":"#818cf8","handoff":"#fbbf24"},
+    "Midnight Blue Light":       {"appearance":"light","bg":"#e8eeff","card":"#ffffff","border":"#7a9fd4","text":"#0a0f2e","muted":"#5570a0","start":"#059669","stop":"#dc2626","sync":"#4f46e5","handoff":"#d97706"},
+    # ── Creeper Green ─────────────────────────────────────
+    "Creeper Green Dark":        {"appearance":"dark", "bg":"#0a1a0a","card":"#0f2a0f","border":"#1a4a1a","text":"#c8f0c8","muted":"#3a6a3a","start":"#4ade80","stop":"#f87171","sync":"#86efac","handoff":"#fde047"},
+    "Creeper Green Light":       {"appearance":"light","bg":"#f0fff0","card":"#ffffff","border":"#86efac","text":"#052e16","muted":"#3a7a3a","start":"#16a34a","stop":"#dc2626","sync":"#059669","handoff":"#ca8a04"},
+    # ── Nether Red ────────────────────────────────────────
+    "Nether Red Dark":           {"appearance":"dark", "bg":"#000000","card":"#1a0000","border":"#6a0000","text":"#ff4444","muted":"#8b0000","start":"#ff6b6b","stop":"#ff0000","sync":"#ff8c8c","handoff":"#ffd700"},
+    "Nether Red Light":          {"appearance":"light","bg":"#fff5f5","card":"#ffffff","border":"#fca5a5","text":"#3a0000","muted":"#b06060","start":"#b91c1c","stop":"#7f1d1d","sync":"#dc2626","handoff":"#c2410c"},
+    # ── Ocean ─────────────────────────────────────────────
+    "Ocean Dark":                {"appearance":"dark", "bg":"#01131e","card":"#021f30","border":"#0e4a6e","text":"#bae6fd","muted":"#2a6a8a","start":"#22d3ee","stop":"#f87171","sync":"#38bdf8","handoff":"#fbbf24"},
+    "Ocean Light":               {"appearance":"light","bg":"#e0f7ff","card":"#ffffff","border":"#7dd3f0","text":"#003a52","muted":"#4a8fa8","start":"#0284c7","stop":"#e11d48","sync":"#0ea5e9","handoff":"#f59e0b"},
+    # ── Sunset ────────────────────────────────────────────
+    "Sunset Dark":               {"appearance":"dark", "bg":"#1a0a00","card":"#2a1200","border":"#7c3a10","text":"#ffe4c4","muted":"#8a5030","start":"#4ade80","stop":"#f87171","sync":"#c084fc","handoff":"#fb923c"},
+    "Sunset Light":              {"appearance":"light","bg":"#fff7ed","card":"#ffffff","border":"#fed7aa","text":"#1c0a00","muted":"#9a6030","start":"#16a34a","stop":"#e11d48","sync":"#7c3aed","handoff":"#ea580c"},
+    # ── Obsidian ──────────────────────────────────────────
+    "Obsidian Dark":             {"appearance":"dark", "bg":"#080808","card":"#101010","border":"#1e1e2e","text":"#cdd6f4","muted":"#45475a","start":"#a6e3a1","stop":"#f38ba8","sync":"#89b4fa","handoff":"#fab387"},
+    "Obsidian Light":            {"appearance":"light","bg":"#f0f0f8","card":"#ffffff","border":"#c5c5e0","text":"#1e1e2e","muted":"#6e7090","start":"#40a02b","stop":"#d20f39","sync":"#1e66f5","handoff":"#e49320"},
+    # ── Ender Night ───────────────────────────────────────
+    "Ender Night Dark":          {"appearance":"dark", "bg":"#000000","card":"#0d0010","border":"#3b0060","text":"#e8b4ff","muted":"#6a2a8a","start":"#bf7fff","stop":"#ff5f87","sync":"#d68fff","handoff":"#ffb347"},
+    "Ender Night Light":         {"appearance":"light","bg":"#f8f0ff","card":"#ffffff","border":"#d4b0ff","text":"#200040","muted":"#7a40a0","start":"#7c3aed","stop":"#db2777","sync":"#6d28d9","handoff":"#c2410c"},
+    # ── Arctic ────────────────────────────────────────────
+    "Arctic Light":              {"appearance":"light","bg":"#eef4fb","card":"#ffffff","border":"#b8d4f0","text":"#0d2137","muted":"#6a90b0","start":"#0ea5e9","stop":"#e11d48","sync":"#6366f1","handoff":"#f59e0b"},
+    "Arctic Dark":               {"appearance":"dark", "bg":"#071520","card":"#0d2035","border":"#1a4060","text":"#dbeafe","muted":"#3a6080","start":"#38bdf8","stop":"#f87171","sync":"#818cf8","handoff":"#fbbf24"},
+    # ── Forest ────────────────────────────────────────────
+    "Forest Dark":               {"appearance":"dark", "bg":"#0d1a0d","card":"#142414","border":"#254025","text":"#d4edda","muted":"#4a7a4a","start":"#86efac","stop":"#fca5a5","sync":"#6ee7b7","handoff":"#fde68a"},
+    "Forest Light":              {"appearance":"light","bg":"#f0faf0","card":"#ffffff","border":"#a7d7a7","text":"#0a2010","muted":"#4a7a4a","start":"#16a34a","stop":"#dc2626","sync":"#0d9488","handoff":"#ca8a04"},
+    # ── Rose Gold ─────────────────────────────────────────
+    "Rose Gold Dark":            {"appearance":"dark", "bg":"#1a0008","card":"#2a0010","border":"#7a2040","text":"#ffd6e0","muted":"#8a4060","start":"#fb7185","stop":"#f43f5e","sync":"#f472b6","handoff":"#fb923c"},
+    "Rose Gold Light":           {"appearance":"light","bg":"#fff0f3","card":"#ffffff","border":"#f4c2cb","text":"#3a0a14","muted":"#b06070","start":"#e11d48","stop":"#9f1239","sync":"#db2777","handoff":"#c2410c"},
+    # ── Dracula ───────────────────────────────────────────
+    "Dracula Dark":              {"appearance":"dark", "bg":"#282a36","card":"#313442","border":"#44475a","text":"#f8f8f2","muted":"#6272a4","start":"#50fa7b","stop":"#ff5555","sync":"#8be9fd","handoff":"#ffb86c"},
+    "Dracula Light":             {"appearance":"light","bg":"#f8f8f5","card":"#ffffff","border":"#bdbdcc","text":"#282a36","muted":"#6272a4","start":"#2da44e","stop":"#d0333e","sync":"#0087cc","handoff":"#c47900"},
+    # ── Lava ──────────────────────────────────────────────
+    "Lava Dark":                 {"appearance":"dark", "bg":"#120500","card":"#1e0a00","border":"#5a1a00","text":"#ffe8d0","muted":"#7a3a10","start":"#ff7c00","stop":"#ff3300","sync":"#ffaa00","handoff":"#ffdd00"},
+    "Lava Light":                {"appearance":"light","bg":"#fff8f0","card":"#ffffff","border":"#ffc080","text":"#2a0a00","muted":"#a05020","start":"#c2410c","stop":"#b91c1c","sync":"#ea580c","handoff":"#b45309"},
+    # ── Sand ──────────────────────────────────────────────
+    "Sand Light":                {"appearance":"light","bg":"#f5e6c8","card":"#fdf3e0","border":"#c8a96e","text":"#3d2b00","muted":"#8a6a30","start":"#5a8a00","stop":"#c0392b","sync":"#1a6b8a","handoff":"#c07000"},
+    "Sand Dark":                 {"appearance":"dark", "bg":"#1a1200","card":"#2a1e00","border":"#7a5a20","text":"#f0dcb0","muted":"#7a6030","start":"#a0c040","stop":"#e05030","sync":"#40a0c0","handoff":"#e0a000"},
+    # ── Void ──────────────────────────────────────────────
+    "Void Dark":                 {"appearance":"dark", "bg":"#000000","card":"#0a0a0a","border":"#1a1a1a","text":"#aaaaaa","muted":"#333333","start":"#444444","stop":"#666666","sync":"#555555","handoff":"#777777"},
+    "Void Light":                {"appearance":"light","bg":"#f0f0f0","card":"#ffffff","border":"#cccccc","text":"#222222","muted":"#999999","start":"#444444","stop":"#888888","sync":"#666666","handoff":"#777777"},
+    # ── Carbon ────────────────────────────────────────────
+    "Carbon Dark":               {"appearance":"dark", "bg":"#1a1a2e","card":"#16213e","border":"#0f3460","text":"#e0e0e0","muted":"#4a4a6a","start":"#00c896","stop":"#e94560","sync":"#4d9fff","handoff":"#f5a623"},
+    "Carbon Light":              {"appearance":"light","bg":"#eef0ff","card":"#ffffff","border":"#8090cc","text":"#0a0a20","muted":"#5060a0","start":"#009966","stop":"#cc2244","sync":"#2266cc","handoff":"#c07000"},
+    # ── Lavender ──────────────────────────────────────────
+    "Lavender Light":            {"appearance":"light","bg":"#f0eeff","card":"#ffffff","border":"#c5b8ff","text":"#1a0050","muted":"#7060a0","start":"#5b21b6","stop":"#db2777","sync":"#4f46e5","handoff":"#d97706"},
+    "Lavender Dark":             {"appearance":"dark", "bg":"#0f0820","card":"#1a1035","border":"#3d2a7a","text":"#e8dfff","muted":"#6050a0","start":"#a78bfa","stop":"#f472b6","sync":"#818cf8","handoff":"#fbbf24"},
+    # ── Mocha ─────────────────────────────────────────────
+    "Mocha Dark":                {"appearance":"dark", "bg":"#1c1410","card":"#2a1f18","border":"#4a3428","text":"#f0dece","muted":"#7a5a48","start":"#c8a86e","stop":"#e05050","sync":"#90b8d0","handoff":"#e8c060"},
+    "Mocha Light":               {"appearance":"light","bg":"#fdf6ee","card":"#ffffff","border":"#d4b896","text":"#2a1a0a","muted":"#9a7a60","start":"#7a5a28","stop":"#c0392b","sync":"#2a6080","handoff":"#c07020"},
+    # ── Sakura ────────────────────────────────────────────
+    "Sakura Light":              {"appearance":"light","bg":"#fff0f5","card":"#ffffff","border":"#ffb8cc","text":"#3a0020","muted":"#c06080","start":"#be185d","stop":"#e11d48","sync":"#9d174d","handoff":"#f59e0b"},
+    "Sakura Dark":               {"appearance":"dark", "bg":"#1a0010","card":"#2a0018","border":"#7a2050","text":"#ffd6e8","muted":"#8a4068","start":"#f472b6","stop":"#fb7185","sync":"#e879f9","handoff":"#fbbf24"},
+    # ── Matrix ────────────────────────────────────────────
+    "Matrix Dark":               {"appearance":"dark", "bg":"#000000","card":"#001400","border":"#004400","text":"#00ff41","muted":"#006600","start":"#00ff41","stop":"#ff0000","sync":"#00cc33","handoff":"#ffff00"},
+    "Matrix Light":              {"appearance":"light","bg":"#f0fff0","card":"#ffffff","border":"#80cc80","text":"#002200","muted":"#408040","start":"#166534","stop":"#b91c1c","sync":"#14532d","handoff":"#713f12"},
+    # ── Nord ──────────────────────────────────────────────
+    "Nord Dark":                 {"appearance":"dark", "bg":"#2e3440","card":"#3b4252","border":"#434c5e","text":"#eceff4","muted":"#4c566a","start":"#a3be8c","stop":"#bf616a","sync":"#88c0d0","handoff":"#ebcb8b"},
+    "Nord Light":                {"appearance":"light","bg":"#eceff4","card":"#ffffff","border":"#d8dee9","text":"#2e3440","muted":"#7a8898","start":"#4c9a2a","stop":"#bf616a","sync":"#5e81ac","handoff":"#d08770"},
+    # ── Solarized ─────────────────────────────────────────
+    "Solarized Light":           {"appearance":"light","bg":"#fdf6e3","card":"#eee8d5","border":"#93a1a1","text":"#073642","muted":"#657b83","start":"#859900","stop":"#dc322f","sync":"#268bd2","handoff":"#b58900"},
+    "Solarized Dark":            {"appearance":"dark", "bg":"#002b36","card":"#073642","border":"#586e75","text":"#fdf6e3","muted":"#839496","start":"#859900","stop":"#dc322f","sync":"#268bd2","handoff":"#b58900"},
+    # ── Gruvbox ───────────────────────────────────────────
+    "Gruvbox Dark":              {"appearance":"dark", "bg":"#282828","card":"#3c3836","border":"#504945","text":"#ebdbb2","muted":"#7c6f64","start":"#b8bb26","stop":"#fb4934","sync":"#83a598","handoff":"#fabd2f"},
+    "Gruvbox Light":             {"appearance":"light","bg":"#fbf1c7","card":"#f9f5d7","border":"#d5c4a1","text":"#3c3836","muted":"#928374","start":"#79740e","stop":"#9d0006","sync":"#076678","handoff":"#b57614"},
+    # ── Cyberpunk ─────────────────────────────────────────
+    "Cyberpunk Dark":            {"appearance":"dark", "bg":"#0a0014","card":"#110022","border":"#ff00ff","text":"#00ffff","muted":"#8800aa","start":"#00ffff","stop":"#ff0088","sync":"#ff00ff","handoff":"#ffff00"},
+    "Cyberpunk Light":           {"appearance":"light","bg":"#f0e8ff","card":"#ffffff","border":"#cc44ff","text":"#1a0030","muted":"#8840aa","start":"#0088cc","stop":"#cc0066","sync":"#8800ff","handoff":"#cc8800"},
+    # ── Slate ─────────────────────────────────────────────
+    "Slate Dark":                {"appearance":"dark", "bg":"#0f172a","card":"#1e293b","border":"#334155","text":"#f1f5f9","muted":"#64748b","start":"#22d3ee","stop":"#f43f5e","sync":"#818cf8","handoff":"#fb923c"},
+    "Slate Light":               {"appearance":"light","bg":"#f1f5f9","card":"#ffffff","border":"#cbd5e1","text":"#0f172a","muted":"#64748b","start":"#0891b2","stop":"#e11d48","sync":"#4f46e5","handoff":"#ea580c"},
+    # ── Amber ─────────────────────────────────────────────
+    "Amber Dark":                {"appearance":"dark", "bg":"#1a1000","card":"#2a1a00","border":"#7a5500","text":"#ffe88a","muted":"#7a6020","start":"#fbbf24","stop":"#ef4444","sync":"#f59e0b","handoff":"#84cc16"},
+    "Amber Light":               {"appearance":"light","bg":"#fffbeb","card":"#ffffff","border":"#fde68a","text":"#1c1400","muted":"#9a7a00","start":"#b45309","stop":"#dc2626","sync":"#d97706","handoff":"#65a30d"},
+    # ── Copper ────────────────────────────────────────────
+    "Copper Dark":               {"appearance":"dark", "bg":"#150900","card":"#221200","border":"#7a3a10","text":"#ffcc99","muted":"#7a4a20","start":"#f97316","stop":"#ef4444","sync":"#fb923c","handoff":"#fbbf24"},
+    "Copper Light":              {"appearance":"light","bg":"#fff8f0","card":"#ffffff","border":"#e0a060","text":"#1a0800","muted":"#a06030","start":"#c2410c","stop":"#b91c1c","sync":"#d97706","handoff":"#65a30d"},
+    # ── CB: Blue & Orange ─────────────────────────────────
+    "CB: Blue & Orange Light":   {"appearance":"light","bg":"#f7f7f7","card":"#ffffff","border":"#cccccc","text":"#000000","muted":"#767676","start":"#0072b2","stop":"#d55e00","sync":"#56b4e9","handoff":"#e69f00"},
+    "CB: Blue & Orange Dark":    {"appearance":"dark", "bg":"#111111","card":"#1e1e1e","border":"#333333","text":"#ffffff","muted":"#888888","start":"#56b4e9","stop":"#d55e00","sync":"#0072b2","handoff":"#e69f00"},
+    # ── CB: Green & Purple ────────────────────────────────
+    "CB: Green & Purple Light":  {"appearance":"light","bg":"#f5f5f5","card":"#ffffff","border":"#cccccc","text":"#000000","muted":"#767676","start":"#009e73","stop":"#cc79a7","sync":"#0072b2","handoff":"#f0e442"},
+    "CB: Green & Purple Dark":   {"appearance":"dark", "bg":"#111111","card":"#1e1e1e","border":"#333333","text":"#eeeeee","muted":"#888888","start":"#009e73","stop":"#cc79a7","sync":"#56b4e9","handoff":"#f0e442"},
+    # ── CB: High Contrast ─────────────────────────────────
+    "CB: High Contrast Light":   {"appearance":"light","bg":"#ffffff","card":"#f0f0f0","border":"#000000","text":"#000000","muted":"#444444","start":"#0000ff","stop":"#ff0000","sync":"#007700","handoff":"#ff8800"},
+    "CB: High Contrast Dark":    {"appearance":"dark", "bg":"#000000","card":"#1a1a1a","border":"#ffffff","text":"#ffffff","muted":"#aaaaaa","start":"#ffff00","stop":"#ff6600","sync":"#00ffff","handoff":"#ff99ff"},
+    # ── CB: Tol Muted ─────────────────────────────────────
+    "CB: Tol Muted Light":       {"appearance":"light","bg":"#f8f4f0","card":"#ffffff","border":"#bbaabb","text":"#221122","muted":"#887799","start":"#44aa99","stop":"#cc6677","sync":"#88ccee","handoff":"#ddcc77"},
+    "CB: Tol Muted Dark":        {"appearance":"dark", "bg":"#221122","card":"#332244","border":"#554466","text":"#eeddff","muted":"#887799","start":"#44aa99","stop":"#cc6677","sync":"#88ccee","handoff":"#ddcc77"},
+    # ── CB: Monochrome ────────────────────────────────────
+    "CB: Monochrome Light":      {"appearance":"light","bg":"#ffffff","card":"#f0f0f0","border":"#999999","text":"#000000","muted":"#666666","start":"#222222","stop":"#777777","sync":"#444444","handoff":"#555555"},
+    "CB: Monochrome Dark":       {"appearance":"dark", "bg":"#111111","card":"#1e1e1e","border":"#555555","text":"#eeeeee","muted":"#888888","start":"#cccccc","stop":"#888888","sync":"#aaaaaa","handoff":"#bbbbbb"},
 }
 
 SETTINGS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "settings.json")
@@ -107,6 +169,18 @@ auto_upload        = settings.get("auto_upload", False)
 auto_upload_mins   = settings.get("auto_upload_mins", 10)
 upload_on_stop     = settings.get("upload_on_stop", True)
 ram_display_mode   = settings.get("ram_display_mode", "percent")
+# Migrate old theme names that were renamed
+_THEME_ALIASES = {
+    "Obsidian":          "Obsidian Dark",
+    "Midnight Blue":     "Midnight Blue Dark",
+    "Creeper Green":     "Creeper Green Dark",
+    "Nether Red":        "Nether Red Dark",
+    "Ender Night":       "Ender Night Dark",
+    "Ocean Light":       "Ocean Light",
+    "Ocean Dark":        "Ocean Dark",
+}
+if current_theme_name not in THEMES:
+    current_theme_name = _THEME_ALIASES.get(current_theme_name, "Dark (Default)")
 T                  = THEMES[current_theme_name]
 
 ctk.set_appearance_mode(T["appearance"])
@@ -660,16 +734,287 @@ def build_ui():
                  font=ctk.CTkFont(size=16, weight="bold"),
                  text_color=T["text"]).pack(side="left", padx=16, pady=10)
 
-    # Theme picker in top bar
-    tm_menu = ctk.CTkOptionMenu(top, values=list(THEMES.keys()),
-                                command=apply_theme,
-                                font=ctk.CTkFont(size=11), width=160, height=28,
-                                fg_color=T["bg"], button_color=T["border"],
-                                button_hover_color=T["muted"], text_color=T["text"],
-                                dropdown_fg_color=T["card"], dropdown_text_color=T["text"],
-                                dropdown_hover_color=T["border"])
-    tm_menu.set(current_theme_name)
-    tm_menu.pack(side="left", padx=(0, 6), pady=8)
+    # Theme picker button → opens search/filter window
+    def open_theme_picker():
+        win = ctk.CTkToplevel(app)
+        win.title("Theme Search")
+        win.geometry("780x620")
+        win.resizable(True, True)
+        win.configure(fg_color=T["bg"])
+        win.grab_set()
+        win.attributes("-topmost", True)
+        try:
+            ax = app.winfo_x() + (app.winfo_width()  - 780) // 2
+            ay = app.winfo_y() + (app.winfo_height() - 620) // 2
+            win.geometry(f"780x620+{ax}+{ay}")
+        except: pass
+
+        # ── colour-role filter state ───────────────────────
+        # Each role has a list of hue-bucket buttons the user can toggle
+        # Hue buckets: red orange yellow green cyan blue purple pink white grey black
+        HUE_LABELS = ["red","orange","yellow","green","cyan","blue","purple","pink","white","grey","black"]
+        HUE_RANGES = {          # hue in [0,360), s/v in [0,1]
+            "red":    (lambda h,s,v: (h<20 or h>=340) and s>0.35 and v>0.15),
+            "orange": (lambda h,s,v: 20<=h<45          and s>0.35 and v>0.15),
+            "yellow": (lambda h,s,v: 45<=h<70          and s>0.35 and v>0.3),
+            "green":  (lambda h,s,v: 70<=h<165         and s>0.25 and v>0.1),
+            "cyan":   (lambda h,s,v: 165<=h<200        and s>0.25 and v>0.2),
+            "blue":   (lambda h,s,v: 200<=h<265        and s>0.25 and v>0.1),
+            "purple": (lambda h,s,v: 265<=h<310        and s>0.25 and v>0.1),
+            "pink":   (lambda h,s,v: 310<=h<340        and s>0.25 and v>0.3),
+            "white":  (lambda h,s,v: s<0.12 and v>0.85),
+            "grey":   (lambda h,s,v: s<0.18 and 0.2<v<=0.85),
+            "black":  (lambda h,s,v: v<=0.2),
+        }
+        ROLE_LABELS = ["bg","card","text","start","stop","sync"]
+
+        import colorsys
+        def hex_to_hsv(hx):
+            hx = hx.lstrip("#")
+            if len(hx)==3: hx = "".join(c*2 for c in hx)
+            r,g,b = int(hx[0:2],16)/255, int(hx[2:4],16)/255, int(hx[4:6],16)/255
+            h,s,v = colorsys.rgb_to_hsv(r,g,b)
+            return h*360, s, v
+
+        # Pre-compute HSV for every theme colour role once
+        _hsv_cache = {}
+        for _tn, _td in THEMES.items():
+            for _role in ROLE_LABELS:
+                _hx = _td.get(_role, "#000000")
+                try: _hsv_cache[(_tn,_role)] = hex_to_hsv(_hx)
+                except: _hsv_cache[(_tn,_role)] = (0,0,0)
+
+        def colour_matches_bucket(theme_name, role, bucket):
+            h,s,v = _hsv_cache.get((theme_name,role),(0,0,0))
+            return HUE_RANGES[bucket](h,s,v)
+
+        # Debounce timer
+        _rebuild_timer = [None]
+
+        # filters[role] = set of active hue buckets (empty = any)
+        filters = {r: set() for r in ROLE_LABELS}
+        mode_filter = tk.StringVar(value="any")   # "any" | "dark" | "light"
+        text_filter = tk.StringVar(value="")
+
+        # ── header ────────────────────────────────────────
+        hdr = ctk.CTkFrame(win, fg_color=T["card"], corner_radius=0)
+        hdr.pack(fill="x")
+        ctk.CTkLabel(hdr, text="Theme Search",
+                     font=ctk.CTkFont(size=14, weight="bold"),
+                     text_color=T["text"]).pack(side="left", padx=14, pady=10)
+        ctk.CTkLabel(hdr, text=f"64 themes",
+                     font=ctk.CTkFont(size=11), text_color=T["muted"]).pack(side="left")
+
+        # mode toggle
+        mr = ctk.CTkFrame(hdr, fg_color="transparent"); mr.pack(side="right", padx=12, pady=8)
+        ctk.CTkLabel(mr, text="Mode:", font=ctk.CTkFont(size=11),
+                     text_color=T["muted"]).pack(side="left", padx=(0,6))
+        for mv, ml in [("any","Any"),("dark","Dark"),("light","Light")]:
+            ctk.CTkRadioButton(mr, text=ml, variable=mode_filter, value=mv,
+                               font=ctk.CTkFont(size=11), text_color=T["text"],
+                               fg_color=T["sync"], border_color=T["border"],
+                               command=lambda: win.after(0, _rebuild_grid)
+                               ).pack(side="left", padx=(0,8))
+
+        # search box
+        sr = ctk.CTkFrame(win, fg_color=T["bg"]); sr.pack(fill="x", padx=14, pady=(8,0))
+        ctk.CTkLabel(sr, text="🔍  Name:", font=ctk.CTkFont(size=11),
+                     text_color=T["muted"]).pack(side="left")
+        se = ctk.CTkEntry(sr, textvariable=text_filter, height=28,
+                          font=ctk.CTkFont(size=12), fg_color=T["card"],
+                          border_color=T["border"], text_color=T["text"],
+                          placeholder_text="type to filter…")
+        se.pack(side="left", fill="x", expand=True, padx=(6,10))
+        def _debounced_rebuild(*_):
+            if _rebuild_timer[0]: win.after_cancel(_rebuild_timer[0])
+            _rebuild_timer[0] = win.after(120, _rebuild_grid)
+        text_filter.trace_add("write", _debounced_rebuild)
+
+        # colour filter rows — collapsed by default, shown when user clicks "Colour Filters"
+        cf_visible = [False]
+        cf_toggle_btn = ctk.CTkButton(win, text="▶  Colour Filters", height=26, width=150,
+                                      font=ctk.CTkFont(size=11), corner_radius=6,
+                                      fg_color="transparent", border_width=1,
+                                      border_color=T["border"], text_color=T["muted"],
+                                      hover_color=T["border"])
+        cf_toggle_btn.pack(anchor="w", padx=14, pady=(4,0))
+
+        cf = ctk.CTkFrame(win, fg_color=T["bg"])
+        # NOT packed yet — shown on demand
+
+        def _toggle_cf():
+            cf_visible[0] = not cf_visible[0]
+            if cf_visible[0]:
+                cf.pack(fill="x", padx=14, pady=(2,0))
+                cf_toggle_btn.configure(text="▼  Colour Filters")
+            else:
+                cf.pack_forget()
+                cf_toggle_btn.configure(text="▶  Colour Filters")
+        cf_toggle_btn.configure(command=_toggle_cf)
+
+        # Also open colour filters when search entry is focused
+        se.bind("<FocusIn>", lambda e: (_toggle_cf() if not cf_visible[0] else None))
+
+        # hue swatch colours for buttons
+        HUE_SWATCHES = {
+            "red":"#ef4444","orange":"#f97316","yellow":"#eab308","green":"#22c55e",
+            "cyan":"#06b6d4","blue":"#3b82f6","purple":"#8b5cf6","pink":"#ec4899",
+            "white":"#f5f5f5","grey":"#888888","black":"#222222",
+        }
+        hue_btn_refs = {}  # (role, hue) -> button widget
+
+        def _toggle_hue(role, hue):
+            if hue in filters[role]: filters[role].discard(hue)
+            else: filters[role].add(hue)
+            _update_hue_btn(role, hue)
+            _rebuild_grid()
+
+        def _update_hue_btn(role, hue):
+            btn = hue_btn_refs.get((role, hue))
+            if not btn: return
+            active = hue in filters[role]
+            btn.configure(
+                fg_color=HUE_SWATCHES[hue] if active else T["bg"],
+                border_color=HUE_SWATCHES[hue],
+                text_color="#000000" if active else T["muted"],
+            )
+
+        for ri, role in enumerate(ROLE_LABELS):
+            rr = ctk.CTkFrame(cf, fg_color="transparent"); rr.pack(fill="x", pady=1)
+            ctk.CTkLabel(rr, text=role.capitalize()+":", font=ctk.CTkFont(size=10),
+                         text_color=T["muted"], width=44, anchor="e").pack(side="left", padx=(0,4))
+            for hue in HUE_LABELS:
+                b = ctk.CTkButton(rr, text=hue, width=52, height=20,
+                                  font=ctk.CTkFont(size=9), corner_radius=4,
+                                  fg_color=T["bg"], border_width=2,
+                                  border_color=HUE_SWATCHES[hue],
+                                  text_color=T["muted"], hover_color=T["border"],
+                                  command=lambda r=role, h=hue: _toggle_hue(r, h))
+                b.pack(side="left", padx=2)
+                hue_btn_refs[(role, hue)] = b
+
+        def _clear_filters():
+            for r in ROLE_LABELS: filters[r].clear()
+            mode_filter.set("any"); text_filter.set("")
+            for (r,h),btn in hue_btn_refs.items(): _update_hue_btn(r,h)
+            _rebuild_grid()
+
+        clr_btn_row = ctk.CTkFrame(win, fg_color="transparent"); clr_btn_row.pack(fill="x", padx=14, pady=(4,0))
+        ctk.CTkButton(clr_btn_row, text="Clear filters", height=22, width=90,
+                      font=ctk.CTkFont(size=10), fg_color="transparent",
+                      border_width=1, border_color=T["border"],
+                      text_color=T["muted"], hover_color=T["border"],
+                      command=_clear_filters).pack(side="left")
+        result_lbl = ctk.CTkLabel(clr_btn_row, text="", font=ctk.CTkFont(size=10),
+                                   text_color=T["muted"])
+        result_lbl.pack(side="left", padx=10)
+
+        ctk.CTkFrame(win, height=1, fg_color=T["border"]).pack(fill="x", padx=14, pady=(6,0))
+
+        # ── scrollable grid ───────────────────────────────
+        grid_outer = ctk.CTkScrollableFrame(win, fg_color="transparent")
+        grid_outer.pack(fill="both", expand=True, padx=10, pady=6)
+
+        _card_widgets = []
+
+        def _theme_matches(name, tdata):
+            # mode
+            m = mode_filter.get()
+            if m != "any" and tdata["appearance"] != m: return False
+            # text search
+            q = text_filter.get().strip().lower()
+            if q and q not in name.lower(): return False
+            # colour filters
+            for role in ROLE_LABELS:
+                if not filters[role]: continue  # no filter on this role = any
+                if not any(colour_matches_bucket(name, role, h) for h in filters[role]):
+                    return False
+            return True
+
+        def _pick(name):
+            apply_theme(name)
+            try: win.destroy()
+            except: pass
+
+        def _rebuild_grid():
+            for w in _card_widgets: 
+                try: w.destroy()
+                except: pass
+            _card_widgets.clear()
+
+            matching = [(n,t) for n,t in THEMES.items() if _theme_matches(n,t)]
+            result_lbl.configure(text=f"{len(matching)} / {len(THEMES)} themes")
+
+            COLS = 3
+            for i, (name, tdata) in enumerate(matching):
+                col = i % COLS
+                row = i // COLS
+
+                card = ctk.CTkFrame(grid_outer,
+                                    fg_color=tdata["card"],
+                                    border_color=tdata["border"],
+                                    border_width=2, corner_radius=10)
+                card.grid(row=row, column=col, padx=6, pady=5, sticky="nsew")
+                grid_outer.columnconfigure(col, weight=1)
+                _card_widgets.append(card)
+
+                # colour swatches row
+                sw_row = ctk.CTkFrame(card, fg_color="transparent"); sw_row.pack(fill="x", padx=8, pady=(8,2))
+                for role in ["bg","card","border","start","stop","sync"]:
+                    swatch = ctk.CTkFrame(sw_row, width=16, height=16, corner_radius=3,
+                                          fg_color=tdata.get(role,"#888888"))
+                    swatch.pack(side="left", padx=2)
+                    swatch.pack_propagate(False)
+
+                # dark/light badge
+                badge_col = "#334155" if tdata["appearance"]=="dark" else "#e2e8f0"
+                badge_tc  = "#e2e8f0" if tdata["appearance"]=="dark" else "#334155"
+                badge = ctk.CTkLabel(sw_row, text="🌙" if tdata["appearance"]=="dark" else "☀",
+                                     font=ctk.CTkFont(size=11),
+                                     fg_color=badge_col, text_color=badge_tc,
+                                     corner_radius=4, width=22, height=18)
+                badge.pack(side="right", padx=(0,2))
+
+                # name + select button
+                nl = ctk.CTkLabel(card, text=name,
+                                  font=ctk.CTkFont(size=11, weight="bold"),
+                                  text_color=tdata["text"],
+                                  wraplength=180, justify="left")
+                nl.pack(anchor="w", padx=10, pady=(2,0))
+
+                # mini preview bar
+                prev = ctk.CTkFrame(card, height=8, fg_color=tdata["bg"],
+                                    corner_radius=0)
+                prev.pack(fill="x", pady=(3,0))
+
+                is_current = (name == current_theme_name)
+                btn = ctk.CTkButton(card,
+                                    text="✓ Active" if is_current else "Apply",
+                                    height=26, corner_radius=6,
+                                    font=ctk.CTkFont(size=11),
+                                    fg_color=tdata["start"] if is_current else tdata["sync"],
+                                    hover_color=tdata["start"],
+                                    text_color="#000000",
+                                    command=lambda n=name: _pick(n))
+                btn.pack(fill="x", padx=8, pady=(4,8))
+
+        _rebuild_grid()
+
+    theme_btn = ctk.CTkButton(top, text=f"🎨  {current_theme_name}", width=180, height=28,
+                               font=ctk.CTkFont(size=11), corner_radius=6,
+                               fg_color=T["bg"], border_width=1, border_color=T["border"],
+                               text_color=T["text"], hover_color=T["border"],
+                               command=open_theme_picker)
+    theme_btn.pack(side="left", padx=(0,6), pady=8)
+
+    # keep theme button label in sync when theme changes via settings
+    _orig_apply = apply_theme
+    def _apply_and_sync(name):
+        _orig_apply(name)
+        try: theme_btn.configure(text=f"🎨  {name}")
+        except: pass
+    # monkey-patch the local reference the Settings option-menu will call
+    globals()["apply_theme"] = _apply_and_sync
 
     # ⚙ Settings button — opens floating window
     def open_settings_window():
@@ -1997,160 +2342,6 @@ def build_settings_tab(parent):
     row(b, "Upload world to GitHub on server stop",
         lambda p: sw(p, lambda: upload_on_stop, lambda v: _set_upload_on_stop(v)))
 
-    # ── Plugins Manager (MC CTRL app addons) ──────────────
-    b = section("Server Plugins Manager")
-
-    def _get_plugins_dir():
-        return os.path.join(load_settings().get("srv_path", SRV_PATH), "plugins")
-
-    plug_list_frame = ctk.CTkFrame(b, fg_color=T["bg"], border_color=T["border"],
-                                   border_width=1, corner_radius=8)
-    plug_list_frame.pack(fill="x", pady=(0,6))
-
-    def _refresh_plug():
-        for w in plug_list_frame.winfo_children(): w.destroy()
-        pd = _get_plugins_dir()
-        try: jars = sorted([x for x in os.listdir(pd) if x.endswith(".jar")])
-        except: jars = []
-        if not jars:
-            ctk.CTkLabel(plug_list_frame, text="No server plugins installed.",
-                         font=ctk.CTkFont(size=11), text_color=T["muted"]).pack(padx=14, pady=8)
-        else:
-            for j in jars:
-                pr = ctk.CTkFrame(plug_list_frame, fg_color="transparent")
-                pr.pack(fill="x", padx=10, pady=3)
-                ctk.CTkLabel(pr, text=j.replace(".jar",""),
-                             font=ctk.CTkFont(size=12), text_color=T["text"]).pack(side="left")
-                def _rem(n=j):
-                    try:
-                        os.remove(os.path.join(_get_plugins_dir(), n))
-                        show_toast(f"Removed {n}", T["stop"])
-                        _refresh_plug()
-                    except Exception as ex: show_toast(f"Error: {ex}", T["stop"])
-                ctk.CTkButton(pr, text="Remove", width=64, height=22,
-                              font=ctk.CTkFont(size=10), fg_color="transparent",
-                              border_width=1, border_color=T["stop"],
-                              text_color=T["stop"], hover_color=T["border"],
-                              command=_rem).pack(side="right")
-
-    def _add_server_plugin():
-        pd = _get_plugins_dir(); os.makedirs(pd, exist_ok=True)
-        paths = _tk_fd.askopenfilenames(title="Select plugin JAR(s)",
-                                        filetypes=[("JAR","*.jar"),("All","*.*")])
-        if not paths: return
-        for p in paths:
-            try: shutil.copy2(p, os.path.join(pd, os.path.basename(p)))
-            except Exception as ex: show_toast(f"Failed: {ex}", T["stop"])
-        show_toast(f"{len(paths)} plugin(s) added!", T["start"])
-        _refresh_plug()
-
-    _refresh_plug()
-    pr2 = ctk.CTkFrame(b, fg_color="transparent"); pr2.pack(fill="x", pady=(4,0))
-    ctk.CTkButton(pr2, text="+ Add Plugin JAR(s)", height=30, corner_radius=6,
-                  font=ctk.CTkFont(size=12), fg_color=T["start"],
-                  hover_color=T["start"], text_color="#000",
-                  command=_add_server_plugin).pack(side="left")
-    ctk.CTkButton(pr2, text="Refresh", height=30, corner_radius=6,
-                  font=ctk.CTkFont(size=12), fg_color="transparent",
-                  border_width=1, border_color=T["border"],
-                  text_color=T["muted"], hover_color=T["border"],
-                  command=_refresh_plug).pack(side="left", padx=(8,0))
-    ctk.CTkLabel(b, text="Restart the server after adding or removing plugins.",
-                 font=ctk.CTkFont(size=10), text_color=T["muted"]).pack(anchor="w", pady=(4,0))
-
-    # ── MC CTRL App Addons ─────────────────────────────────
-    b = section("MC CTRL App Addons")
-    ctk.CTkLabel(b, text=(
-        "Addons are custom Python scripts (.py) that anyone can write to extend MC CTRL.\n"
-        "Each addon is loaded at startup. Addons can add new UI panels, commands, or automations."
-    ), font=ctk.CTkFont(size=11), text_color=T["muted"],
-       wraplength=580, justify="left").pack(anchor="w", pady=(0,6))
-
-    addon_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "addons")
-    os.makedirs(addon_dir, exist_ok=True)
-
-    addon_list_frame = ctk.CTkFrame(b, fg_color=T["bg"], border_color=T["border"],
-                                    border_width=1, corner_radius=8)
-    addon_list_frame.pack(fill="x", pady=(0,6))
-
-    def _refresh_addons():
-        for w in addon_list_frame.winfo_children(): w.destroy()
-        try: scripts = sorted([x for x in os.listdir(addon_dir) if x.endswith(".py")])
-        except: scripts = []
-        if not scripts:
-            ctk.CTkLabel(addon_list_frame, text="No addons installed. Drop .py files in the addons/ folder.",
-                         font=ctk.CTkFont(size=11), text_color=T["muted"]).pack(padx=14, pady=8)
-        else:
-            for s in scripts:
-                ar = ctk.CTkFrame(addon_list_frame, fg_color="transparent")
-                ar.pack(fill="x", padx=10, pady=3)
-                loaded = s.replace(".py","") in _loaded_addons
-                dot = ctk.CTkLabel(ar, text="●", font=ctk.CTkFont(size=11),
-                                   text_color=T["start"] if loaded else T["muted"])
-                dot.pack(side="left", padx=(0,6))
-                ctk.CTkLabel(ar, text=s, font=ctk.CTkFont(size=12),
-                             text_color=T["text"]).pack(side="left")
-                ctk.CTkLabel(ar, text="loaded" if loaded else "not loaded",
-                             font=ctk.CTkFont(size=10),
-                             text_color=T["start"] if loaded else T["muted"]).pack(side="left", padx=8)
-                def _reload_addon(name=s):
-                    _load_addon(os.path.join(addon_dir, name))
-                    _refresh_addons()
-                def _remove_addon(name=s):
-                    try:
-                        os.remove(os.path.join(addon_dir, name))
-                        key = name.replace(".py","")
-                        _loaded_addons.pop(key, None)
-                        show_toast(f"Removed addon: {name}", T["stop"])
-                        _refresh_addons()
-                    except Exception as ex: show_toast(f"Error: {ex}", T["stop"])
-                ctk.CTkButton(ar, text="Reload", width=64, height=22,
-                              font=ctk.CTkFont(size=10), fg_color="transparent",
-                              border_width=1, border_color=T["sync"],
-                              text_color=T["sync"], hover_color=T["border"],
-                              command=_reload_addon).pack(side="right", padx=(4,0))
-                ctk.CTkButton(ar, text="Remove", width=64, height=22,
-                              font=ctk.CTkFont(size=10), fg_color="transparent",
-                              border_width=1, border_color=T["stop"],
-                              text_color=T["stop"], hover_color=T["border"],
-                              command=_remove_addon).pack(side="right")
-
-    _refresh_addons()
-
-    def _install_addon():
-        paths = _tk_fd.askopenfilenames(title="Select MC CTRL addon (.py)",
-                                        filetypes=[("Python scripts","*.py"),("All","*.*")])
-        if not paths: return
-        for p in paths:
-            dest = os.path.join(addon_dir, os.path.basename(p))
-            try:
-                shutil.copy2(p, dest)
-                _load_addon(dest)
-            except Exception as ex: show_toast(f"Failed: {ex}", T["stop"])
-        show_toast(f"{len(paths)} addon(s) installed!", T["start"])
-        _refresh_addons()
-
-    ar2 = ctk.CTkFrame(b, fg_color="transparent"); ar2.pack(fill="x", pady=(4,0))
-    ctk.CTkButton(ar2, text="+ Install Addon (.py)", height=30, corner_radius=6,
-                  font=ctk.CTkFont(size=12), fg_color=T["sync"],
-                  hover_color=T["sync"], text_color="#000",
-                  command=_install_addon).pack(side="left")
-    ctk.CTkButton(ar2, text="Open Addons Folder", height=30, corner_radius=6,
-                  font=ctk.CTkFont(size=12), fg_color="transparent",
-                  border_width=1, border_color=T["border"],
-                  text_color=T["muted"], hover_color=T["border"],
-                  command=lambda: os.startfile(addon_dir)).pack(side="left", padx=(8,0))
-    ctk.CTkButton(ar2, text="Refresh", height=30, corner_radius=6,
-                  font=ctk.CTkFont(size=12), fg_color="transparent",
-                  border_width=1, border_color=T["border"],
-                  text_color=T["muted"], hover_color=T["border"],
-                  command=_refresh_addons).pack(side="left", padx=(8,0))
-    ctk.CTkLabel(b, text=(
-        "Addon API: your script receives (app, T, log, show_toast, send_server_cmd, load_settings)\n"
-        "via a setup(ctx) function. See addons/README.md for the full API."
-    ), font=ctk.CTkFont(size=10), text_color=T["muted"],
-       wraplength=580, justify="left").pack(anchor="w", pady=(6,0))
-
     # ── Server Plugins Manager ────────────────────────────
     b = section("Server Plugins Manager")
     def _get_pd(): return os.path.join(load_settings().get("srv_path",SRV_PATH),"plugins")
@@ -2267,6 +2458,117 @@ def _set_upload_on_stop(val):
     upload_on_stop = val; update_setting("upload_on_stop", val)
 
 # ── Server actions ────────────────────────────────────────
+def _check_eula(path):
+    """
+    Returns True if eula=true is already set.
+    Otherwise shows a modal popup explaining the Minecraft EULA and lets the
+    user accept or cancel.  If accepted, writes eula.txt and returns True.
+    If cancelled, returns False (server will not start).
+    """
+    eula_path = os.path.join(path, "eula.txt")
+
+    # Already accepted?
+    try:
+        txt = open(eula_path, encoding="utf-8").read().lower()
+        if "eula=true" in txt:
+            return True
+    except FileNotFoundError:
+        pass  # file doesn't exist yet — need to show popup
+
+    # Show the popup on the main thread and block until the user responds
+    result = [None]   # shared result between threads
+
+    def _show():
+        win = ctk.CTkToplevel(app)
+        win.title("Minecraft EULA")
+        win.resizable(False, False)
+        win.configure(fg_color=T["bg"])
+        win.grab_set()
+        win.attributes("-topmost", True)
+        win.protocol("WM_DELETE_WINDOW", lambda: None)   # can't close with X
+
+        # Centre over main window
+        win.update_idletasks()
+        w, h = 500, 390
+        try:
+            ax = app.winfo_x() + (app.winfo_width()  - w) // 2
+            ay = app.winfo_y() + (app.winfo_height() - h) // 2
+            win.geometry(f"{w}x{h}+{ax}+{ay}")
+        except:
+            win.geometry(f"{w}x{h}")
+
+        # ── Icon row ──────────────────────────────────────
+        ctk.CTkLabel(win, text="⚠", font=ctk.CTkFont(size=42),
+                     text_color=T["handoff"]).pack(pady=(22, 0))
+
+        ctk.CTkLabel(win, text="Minecraft End User Licence Agreement",
+                     font=ctk.CTkFont(size=15, weight="bold"),
+                     text_color=T["text"]).pack(pady=(6, 0))
+
+        # ── Body ──────────────────────────────────────────
+        body = ctk.CTkFrame(win, fg_color=T["card"], border_color=T["border"],
+                            border_width=1, corner_radius=10)
+        body.pack(fill="x", padx=24, pady=14)
+
+        ctk.CTkLabel(body, text=(
+            "Before starting your server for the first time, you must\n"
+            "agree to the Minecraft End User Licence Agreement (EULA).\n\n"
+            "By accepting, you confirm that you have read and agreed to\n"
+            "the terms at:\n\n"
+            "  https://aka.ms/MinecraftEULA\n\n"
+            "Accepting will write  eula=true  to eula.txt in your\n"
+            "server folder so Minecraft can start."
+        ), font=ctk.CTkFont(size=12), text_color=T["muted"],
+           justify="left").pack(padx=18, pady=14)
+
+        # ── Buttons ───────────────────────────────────────
+        btn_row = ctk.CTkFrame(win, fg_color="transparent")
+        btn_row.pack(pady=(0, 18))
+
+        def _accept():
+            try:
+                os.makedirs(path, exist_ok=True)
+                with open(eula_path, "w", encoding="utf-8") as f:
+                    f.write(
+                        "# Accepted via MC CTRL on "
+                        f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+                        "# https://aka.ms/MinecraftEULA\n"
+                        "eula=true\n"
+                    )
+                log("  EULA accepted — eula.txt written.")
+            except Exception as ex:
+                log(f"  EULA write error: {ex}")
+            result[0] = True
+            win.destroy()
+
+        def _decline():
+            result[0] = False
+            win.destroy()
+
+        ctk.CTkButton(btn_row, text="I Agree — Accept EULA", width=190, height=36,
+                      font=ctk.CTkFont(size=13, weight="bold"),
+                      fg_color=T["start"], hover_color=T["start"],
+                      text_color="#000000",
+                      command=_accept).pack(side="left", padx=(0, 12))
+
+        ctk.CTkButton(btn_row, text="Decline", width=100, height=36,
+                      font=ctk.CTkFont(size=13),
+                      fg_color="transparent", border_width=1,
+                      border_color=T["stop"], text_color=T["stop"],
+                      hover_color=T["border"],
+                      command=_decline).pack(side="left")
+
+        win.wait_window()   # blocks until accepted or declined
+
+    app.after(0, _show)
+
+    # spin-wait for the popup to be dismissed (we're on a daemon thread)
+    while result[0] is None:
+        time.sleep(0.05)
+
+    return result[0]
+
+
 def start_server():
     global server_proc, server_stdin, server_pid, server_start_time, perf_running, server_ready, player_count
     set_all_buttons("disabled")
@@ -2274,6 +2576,14 @@ def start_server():
     path = s.get("srv_path", SRV_PATH)
     java = s.get("java_path", JAVA_PATH)
     repo = s.get("repo_url", REPO_URL)
+
+    # ── EULA check — must happen before launch ─────────────
+    if not _check_eula(path):
+        log("  Server start cancelled — EULA not accepted.")
+        set_status("Stopped", T["stop"])
+        set_all_buttons("normal")
+        return
+
     set_status("Starting...", T["handoff"])
     log("-- Start Server ------------------")
     run_cmd(f"git remote set-url origin {repo}", cwd=path)
@@ -2355,8 +2665,36 @@ def sync_git():
     set_status("Stopped", T["stop"]); set_all_buttons("normal")
 
 # ── Boot ──────────────────────────────────────────────────
-build_ui()
-if auto_upload: schedule_auto_upload()
+# Show a minimal loading screen immediately so the window
+# appears instantly, then build the real UI on the next tick.
+_splash_frame = ctk.CTkFrame(app, fg_color=T["bg"])
+_splash_frame.place(relx=0, rely=0, relwidth=1, relheight=1)
+_splash_lbl = ctk.CTkLabel(
+    _splash_frame,
+    text="MC CTRL",
+    font=ctk.CTkFont(size=48, weight="bold"),
+    text_color=T["start"])
+_splash_lbl.place(relx=0.5, rely=0.38, anchor="center")
+_splash_sub = ctk.CTkLabel(
+    _splash_frame,
+    text="Loading…",
+    font=ctk.CTkFont(size=14),
+    text_color=T["muted"])
+_splash_sub.place(relx=0.5, rely=0.50, anchor="center")
+_splash_bar = ctk.CTkProgressBar(_splash_frame, width=260, height=6,
+                                  fg_color=T["border"], progress_color=T["start"])
+_splash_bar.place(relx=0.5, rely=0.57, anchor="center")
+_splash_bar.set(0)
+_splash_bar.start()
+
+def _finish_boot():
+    global _splash_frame
+    _splash_bar.stop()
+    build_ui()
+    _splash_frame.destroy()
+    if auto_upload: schedule_auto_upload()
+
+app.after(50, _finish_boot)
 
 def _splash():
     lines = [
@@ -2376,6 +2714,6 @@ def _splash():
     for line in lines: log(line)
     if is_first_launch: app.after(200, show_first_launch_dialog)
 
-_load_all_addons()
-app.after(300, _splash)
+app.after(200, _splash)
+app.after(800, _load_all_addons)  # load addons after UI is visible
 app.mainloop()
