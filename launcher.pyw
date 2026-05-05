@@ -15,8 +15,6 @@ import urllib.error
 import importlib.util
 import sys
 from datetime import datetime
-import psutil
-
 try:
     import tkinterdnd2 as dnd
     _DND_AVAILABLE = True
@@ -30,7 +28,13 @@ playit_proc      = None
 playit_tunnel    = None
 playit_log_lines = []
 _playit_addr_re  = re.compile(
-    r'([\w\-]+\.(?:at\.ply\.gg|playit\.gg)(?::\d+)?)', re.IGNORECASE)
+    r'((?:[\w\-]+\.)+(?:ply\.gg|playit\.gg|joinmc\.link|plymc\.link|mc\.gg)(?::\d+)?)',
+    re.IGNORECASE)
+# Also match the "hostname => ip:port" arrow format playit uses in its TUI
+_playit_arrow_re = re.compile(
+    r'([\w][\w\-.]+\.[a-z]{2,})\s*=>\s*[\d.]+:\d+', re.IGNORECASE)
+_playit_claim_re = re.compile(
+    r'(https?://[^\s]+(?:playit|claim|tunnel)[^\s]*)', re.IGNORECASE)
 
 # ── App addon globals ──────────────────────────────────────
 _loaded_addons   = {}   # name -> module
@@ -140,23 +144,48 @@ THEMES = {
 
 SETTINGS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "settings.json")
 
-# ── Settings helpers ──────────────────────────────────────
+# ── Settings helpers (cached — avoids disk read on every widget event) ────────
+_settings_cache = None
+_settings_lock  = threading.Lock()
+
 def load_settings():
-    try:
-        with open(SETTINGS_FILE) as f:
-            return json.load(f)
-    except:
-        return {}
+    global _settings_cache
+    with _settings_lock:
+        if _settings_cache is not None:
+            return dict(_settings_cache)
+        try:
+            with open(SETTINGS_FILE, encoding="utf-8") as f:
+                _settings_cache = json.load(f)
+        except Exception:
+            _settings_cache = {}
+        return dict(_settings_cache)
 
 def save_settings(data):
+    global _settings_cache
+    with _settings_lock:
+        _settings_cache = dict(data)
     try:
-        with open(SETTINGS_FILE, "w") as f:
+        with open(SETTINGS_FILE, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2)
-    except:
+    except Exception:
         pass
 
 def update_setting(key, value):
-    s = load_settings(); s[key] = value; save_settings(s)
+    global _settings_cache
+    with _settings_lock:
+        if _settings_cache is None:
+            _settings_cache = {}
+        _settings_cache[key] = value
+    # Write in a background thread so the UI never blocks on disk I/O
+    def _write():
+        try:
+            with _settings_lock:
+                snap = dict(_settings_cache)
+            with open(SETTINGS_FILE, "w", encoding="utf-8") as f:
+                json.dump(snap, f, indent=2)
+        except Exception:
+            pass
+    threading.Thread(target=_write, daemon=True).start()
 
 settings           = load_settings()
 is_first_launch    = "theme" not in settings
@@ -303,6 +332,9 @@ def parse_server_line(raw):
         return ('event', f"[DEATH] {clean}")
 
     return ('log', clean)
+
+# ── Pre-warm settings cache in background ─────────────────
+threading.Thread(target=load_settings, daemon=True).start()
 
 # ── App window ────────────────────────────────────────────
 app = ctk.CTk()
@@ -496,6 +528,7 @@ def _do_auto_upload():
 perf_labels = {}
 
 def find_java_proc():
+    import psutil  # lazy import — not needed until perf polling starts
     for p in psutil.process_iter(['pid', 'name', 'cmdline']):
         try:
             if p.info['name'] and 'java' in p.info['name'].lower():
@@ -505,6 +538,7 @@ def find_java_proc():
     return None
 
 def perf_loop():
+    import psutil  # lazy
     global perf_running
     perf_running = True
     java_proc = None; tick = 0
@@ -584,6 +618,25 @@ def rebuild_ui():
     except: pass
     for w in app.winfo_children(): w.destroy()
     build_ui()
+    # Restore playit log — if the playit tab was already built, repopulate it
+    if playit_log_lines:
+        def _restore_ptlog():
+            try:
+                from itertools import islice
+                # find pt_log widget by scanning all Text widgets in the app
+                def _find_text(w):
+                    results = []
+                    for child in w.winfo_children():
+                        if isinstance(child, ctk.CTkTextbox):
+                            results.append(child)
+                        results.extend(_find_text(child))
+                    return results
+                # Just trigger the playit tab to build, then repopulate
+                # The playit_log_lines global is preserved — _append_ptlog uses it
+                pass  # log lines are re-added when tab is first opened via _built_tabs
+            except Exception:
+                pass
+        app.after(100, _restore_ptlog)
 
 def swap_layout():
     global log_left
@@ -719,6 +772,43 @@ def show_first_launch_dialog():
                   height=48, corner_radius=10,
                   fg_color="#22c55e", hover_color="#16a34a", text_color="#000000",
                   command=_confirm).pack(padx=20, pady=(0,24), fill="x")
+
+# ── Smooth scrollable frame (replaces CTkScrollableFrame) ─
+def make_scroll_frame(parent, **kwargs):
+    """Canvas scroll area — atomic redraw, no flicker on fast scroll."""
+    fg = kwargs.pop("fg_color", "transparent")
+    bg = T["bg"] if fg == "transparent" else (fg[1] if isinstance(fg, (list,tuple)) else fg)
+
+    outer = ctk.CTkFrame(parent, fg_color=fg, **kwargs)
+    outer.pack(fill="both", expand=True)
+
+    canvas = tk.Canvas(outer, bg=bg, highlightthickness=0, bd=0)
+    vbar   = ctk.CTkScrollbar(outer, orientation="vertical",
+                               command=canvas.yview,
+                               button_color=T["border"],
+                               button_hover_color=T["muted"])
+    vbar.pack(side="right", fill="y")
+    canvas.pack(side="left", fill="both", expand=True)
+    canvas.configure(yscrollcommand=vbar.set)
+
+    inner = ctk.CTkFrame(canvas, fg_color=fg)
+    win_id = canvas.create_window((0, 0), window=inner, anchor="nw")
+
+    def _resize_inner(e): canvas.itemconfig(win_id, width=e.width)
+    def _update_region(e): canvas.configure(scrollregion=canvas.bbox("all"))
+    canvas.bind("<Configure>", _resize_inner)
+    inner.bind("<Configure>", _update_region)
+
+    def _scroll(e): canvas.yview_scroll(int(-e.delta / 60), "units")
+    def _bind_tree(w):
+        try:
+            w.bind("<MouseWheel>", _scroll)
+            for c in w.winfo_children(): _bind_tree(c)
+        except Exception: pass
+    canvas.bind("<MouseWheel>", _scroll)
+    inner.bind("<MouseWheel>", _scroll)
+    inner.bind("<Map>", lambda e: _bind_tree(inner))
+    return inner
 
 # ── UI ────────────────────────────────────────────────────
 def build_ui():
@@ -1058,32 +1148,58 @@ def build_ui():
 
     tab_btns = {}
 
+    multictrl_frame  = ctk.CTkFrame(tab_content, fg_color="transparent")
+
+    all_frames = {
+        "dashboard":  dashboard_frame,
+        "network":    network_frame,
+        "serverinfo": serverinfo_frame,
+        "playit":     playit_frame,
+        "multictrl":  multictrl_frame,
+    }
+    _built_tabs = set()   # lazy: only build when first visited
+
     def show_tab(name):
-        for f in [dashboard_frame, network_frame, serverinfo_frame, playit_frame]:
+        for f in all_frames.values():
             f.pack_forget()
         for n, b in tab_btns.items():
             b.configure(fg_color="transparent", text_color=T["muted"])
-        frames = {"dashboard": dashboard_frame, "network": network_frame,
-                  "serverinfo": serverinfo_frame, "playit": playit_frame}
-        frames[name].pack(fill="both", expand=True)
+        # Lazy build on first visit
+        if name not in _built_tabs:
+            _built_tabs.add(name)
+            builders = {
+                "dashboard":  lambda: build_dashboard(dashboard_frame, is_fs),
+                "network":    lambda: build_network_tab(network_frame),
+                "serverinfo": lambda: build_server_info_tab(serverinfo_frame),
+                "playit":     lambda: build_playit_tab(playit_frame),
+                "multictrl":  lambda: build_multictrl_tab(multictrl_frame),
+            }
+            if name in builders:
+                builders[name]()
+        all_frames[name].pack(fill="both", expand=True)
         tab_btns[name].configure(fg_color=T["sync"], text_color="#000")
 
-    for key, label in [("dashboard","Dashboard"), ("network","Network & IPs"),
-                       ("serverinfo","Server Info"), ("playit","playit.gg")]:
-        b = ctk.CTkButton(tab_bar, text=label, width=120, height=30,
-                          font=ctk.CTkFont(size=12), corner_radius=6,
-                          fg_color="transparent", text_color=T["muted"],
+    TAB_DEFS = [
+        ("dashboard",  "Dashboard"),
+        ("playit",     "playit.gg"),
+        ("serverinfo", "Server Info"),
+        ("network",    "Network & IPs"),
+        ("multictrl",  "⊞ MULTI CTRL"),
+    ]
+    for key, label in TAB_DEFS:
+        is_multi = key == "multictrl"
+        b = ctk.CTkButton(tab_bar, text=label,
+                          width=130 if is_multi else 120, height=30,
+                          font=ctk.CTkFont(size=12, weight="bold" if is_multi else "normal"),
+                          corner_radius=6,
+                          fg_color=T["handoff"] if is_multi else "transparent",
+                          text_color="#000" if is_multi else T["muted"],
                           hover_color=T["border"],
                           command=lambda k=key: show_tab(k))
         b.pack(side="left", padx=(8 if key=="dashboard" else 2, 2), pady=6)
         tab_btns[key] = b
 
-    build_dashboard(dashboard_frame, is_fs)
-    build_network_tab(network_frame)
-    build_server_info_tab(serverinfo_frame)
-    build_playit_tab(playit_frame)
-
-    show_tab("dashboard")
+    show_tab("dashboard")   # only dashboard is built at startup
 
 # ── Dashboard ─────────────────────────────────────────────
 def build_dashboard(parent, is_fs):
@@ -1091,8 +1207,7 @@ def build_dashboard(parent, is_fs):
     global log_box, chat_box, cmd_entry, chat_toggle_btn
 
     if not is_fs:
-        scroll = ctk.CTkScrollableFrame(parent, fg_color="transparent")
-        scroll.pack(fill="both", expand=True)
+        scroll = make_scroll_frame(parent, fg_color="transparent")
         container = scroll
     else:
         container = ctk.CTkFrame(parent, fg_color="transparent")
@@ -1282,8 +1397,7 @@ def build_perf_panel(parent):
 def build_network_tab(parent):
     import socket, urllib.request
 
-    scroll = ctk.CTkScrollableFrame(parent, fg_color="transparent")
-    scroll.pack(fill="both", expand=True)
+    scroll = make_scroll_frame(parent, fg_color="transparent")
 
     def get_local_ip():
         try:
@@ -1453,6 +1567,134 @@ def build_network_tab(parent):
     ), font=ctk.CTkFont(size=12), text_color=T["muted"],
        justify="left", wraplength=900).pack(anchor="w", padx=14, pady=(8,12))
 
+    # ── Quick World Switcher (in Network tab) ─────────────
+    wqf = ctk.CTkFrame(scroll, fg_color=T["card"], border_color=T["border"],
+                       border_width=1, corner_radius=10)
+    wqf.pack(fill="x", padx=20, pady=(0,12))
+    wqh = ctk.CTkFrame(wqf, fg_color="transparent"); wqh.pack(fill="x", padx=14, pady=(10,4))
+    ctk.CTkLabel(wqh, text="ACTIVE SERVER",
+                 font=ctk.CTkFont(size=10), text_color=T["muted"]).pack(side="left")
+    ctk.CTkFrame(wqf, height=1, fg_color=T["border"]).pack(fill="x", padx=14)
+    wqb = ctk.CTkFrame(wqf, fg_color="transparent"); wqb.pack(fill="x", padx=14, pady=(6, 10))
+    ctk.CTkLabel(wqb, text="Select which server folder to load when the server starts (updates level-name in server.properties).",
+                 font=ctk.CTkFont(size=11), text_color=T["muted"], wraplength=820,
+                 justify="left").pack(anchor="w", pady=(0, 6))
+
+    wq_inner = ctk.CTkFrame(wqb, fg_color=T["bg"], border_color=T["border"],
+                             border_width=1, corner_radius=8)
+    wq_inner.pack(fill="x")
+
+    def _net_get_worlds():
+        path = load_settings().get("srv_path", SRV_PATH)
+        try:
+            folders = []
+            for e in sorted(os.listdir(path)):
+                full = os.path.join(path, e)
+                if not os.path.isdir(full) or e.startswith("."):
+                    continue
+                # Only treat as a server instance if it has server.properties
+                if os.path.exists(os.path.join(full, "server.properties")):
+                    folders.append(e)
+            return folders if folders else []
+        except: return []
+
+    def _net_read_active():
+        path = load_settings().get("srv_path", SRV_PATH)
+        try:
+            with open(os.path.join(path, "server.properties"), encoding="utf-8", errors="ignore") as f:
+                for line in f:
+                    line = line.strip()
+                    if line.startswith("level-name") and "=" in line:
+                        return line.split("=", 1)[1].strip()
+        except: pass
+        return "world"
+
+    def _net_set_world(name):
+        path = load_settings().get("srv_path", SRV_PATH)
+        props = os.path.join(path, "server.properties")
+        try:
+            if os.path.exists(props):
+                with open(props, encoding="utf-8", errors="ignore") as f: lines = f.readlines()
+                new_lines = []; found = False
+                for line in lines:
+                    if line.strip().startswith("level-name") and "=" in line:
+                        new_lines.append(f"level-name={name}\n"); found = True
+                    else: new_lines.append(line)
+                if not found: new_lines.append(f"level-name={name}\n")
+                with open(props, "w", encoding="utf-8") as f: f.writelines(new_lines)
+            show_toast(f"Active server → {name}", T["start"])
+            _net_refresh_worlds()
+        except Exception as ex: show_toast(f"Error: {ex}", T["stop"])
+
+    def _net_refresh_worlds():
+        for w in wq_inner.winfo_children(): w.destroy()
+        worlds = _net_get_worlds()
+        active = _net_read_active()
+        # Header row with count
+        row_top = ctk.CTkFrame(wq_inner, fg_color="transparent")
+        row_top.pack(fill="x", padx=10, pady=(8, 4))
+        ctk.CTkLabel(row_top,
+                     text=f"Found {len(worlds)} server instance{'s' if len(worlds)!=1 else ''} (subfolders with server.properties):",
+                     font=ctk.CTkFont(size=11), text_color=T["muted"]).pack(side="left")
+        if not worlds or worlds == ["world"]:
+            ctk.CTkLabel(wq_inner, text="No sub-servers found.\nEach must be a subfolder containing server.properties.",
+                         font=ctk.CTkFont(size=11), text_color=T["muted"]).pack(padx=10, pady=(0,8))
+        for wname in worlds:
+            wr = ctk.CTkFrame(wq_inner,
+                              fg_color=T["card"] if wname==active else "transparent",
+                              corner_radius=6)
+            wr.pack(fill="x", padx=10, pady=2)
+            is_active = (wname == active)
+            dot = ctk.CTkLabel(wr, text="●" if is_active else "○", width=20,
+                               font=ctk.CTkFont(size=14),
+                               text_color=T["start"] if is_active else T["muted"])
+            dot.pack(side="left", padx=(8,4), pady=6)
+            ctk.CTkLabel(wr, text=wname,
+                         font=ctk.CTkFont(size=12, weight="bold" if is_active else "normal"),
+                         text_color=T["start"] if is_active else T["text"]).pack(side="left")
+            if is_active:
+                ctk.CTkLabel(wr, text="  ← active", font=ctk.CTkFont(size=10),
+                             text_color=T["start"]).pack(side="left")
+            else:
+                ctk.CTkButton(wr, text="Switch to This", width=110, height=26,
+                              font=ctk.CTkFont(size=11), fg_color=T["sync"],
+                              hover_color=T["border"], text_color="#000",
+                              command=lambda n=wname: _net_set_world(n)).pack(side="right", padx=6, pady=4)
+        # Manual / browse entry
+        ctk.CTkFrame(wq_inner, height=1, fg_color=T["border"]).pack(fill="x", padx=10, pady=(6, 0))
+        man = ctk.CTkFrame(wq_inner, fg_color="transparent"); man.pack(fill="x", padx=10, pady=(6, 10))
+        ctk.CTkLabel(man, text="Or type:", font=ctk.CTkFont(size=11),
+                     text_color=T["muted"]).pack(side="left", padx=(0, 6))
+        _mwv = ctk.StringVar()
+        ctk.CTkEntry(man, textvariable=_mwv, width=150, height=28,
+                     font=ctk.CTkFont(size=12, family="Consolas"),
+                     fg_color=T["bg"], border_color=T["border"], text_color=T["text"],
+                     placeholder_text="server_folder_name").pack(side="left", padx=(0, 6))
+        ctk.CTkButton(man, text="Set", width=50, height=28,
+                      font=ctk.CTkFont(size=11), fg_color=T["start"],
+                      hover_color=T["start"], text_color="#000",
+                      command=lambda: _mwv.get().strip() and _net_set_world(_mwv.get().strip())
+                      ).pack(side="left", padx=(0, 6))
+        def _browse_srv():
+            import tkinter.filedialog as _fd
+            p = load_settings().get("srv_path", SRV_PATH)
+            chosen = _fd.askdirectory(title="Select server folder", initialdir=p)
+            if chosen:
+                folder = os.path.basename(chosen)
+                _net_set_world(folder)
+        ctk.CTkButton(man, text="Browse…", width=72, height=28,
+                      font=ctk.CTkFont(size=11), fg_color="transparent",
+                      border_width=1, border_color=T["border"],
+                      text_color=T["muted"], hover_color=T["border"],
+                      command=_browse_srv).pack(side="left")
+
+    _net_refresh_worlds()
+    ctk.CTkButton(wqh, text="Refresh", width=70, height=22,
+                  font=ctk.CTkFont(size=10), fg_color="transparent",
+                  border_width=1, border_color=T["border"],
+                  text_color=T["muted"], hover_color=T["border"],
+                  command=_net_refresh_worlds).pack(side="right")
+
     def fetch_ext():
         try:
             ip = urllib.request.urlopen("https://api.ipify.org", timeout=5).read().decode()
@@ -1464,8 +1706,7 @@ def build_network_tab(parent):
 
 # ── Server Info tab ───────────────────────────────────────
 def build_server_info_tab(parent):
-    scroll = ctk.CTkScrollableFrame(parent, fg_color="transparent")
-    scroll.pack(fill="both", expand=True)
+    scroll = make_scroll_frame(parent, fg_color="transparent")
 
     def section_card(title):
         f = ctk.CTkFrame(scroll, fg_color=T["card"], border_color=T["border"],
@@ -1531,6 +1772,148 @@ def build_server_info_tab(parent):
                   hover_color=T["sync"], text_color="#000",
                   command=lambda: (send_server_cmd("list"), refresh_players_now())
                   ).pack(side="right")
+
+    # ── Active Server Selector ────────────────────────────────
+    wb, wh = section_card("Active Server")
+    ctk.CTkLabel(wb, text=(
+        "Select which server folder loads when the server starts. "
+        "This updates level-name in server.properties."
+    ), font=ctk.CTkFont(size=11), text_color=T["muted"], wraplength=820,
+       justify="left").pack(anchor="w", pady=(0, 6))
+
+    world_sel_frame = ctk.CTkFrame(wb, fg_color=T["bg"], border_color=T["border"],
+                                   border_width=1, corner_radius=8)
+    world_sel_frame.pack(fill="x")
+
+    _active_world_var = ctk.StringVar(value="world")
+
+    def _get_world_folders():
+        path = load_settings().get("srv_path", SRV_PATH)
+        try:
+            folders = []
+            for entry in sorted(os.listdir(path)):
+                full = os.path.join(path, entry)
+                if not os.path.isdir(full) or entry.startswith("."):
+                    continue
+                # Only treat as a server instance if it has server.properties
+                if os.path.exists(os.path.join(full, "server.properties")):
+                    folders.append(entry)
+            return folders if folders else []
+        except:
+            return []
+
+    def _read_active_world():
+        path = load_settings().get("srv_path", SRV_PATH)
+        try:
+            with open(os.path.join(path, "server.properties"), encoding="utf-8", errors="ignore") as f:
+                for line in f:
+                    line = line.strip()
+                    if line.startswith("level-name") and "=" in line:
+                        return line.split("=", 1)[1].strip()
+        except:
+            pass
+        return "world"
+
+    def _set_active_world(name):
+        path = load_settings().get("srv_path", SRV_PATH)
+        props_path = os.path.join(path, "server.properties")
+        try:
+            if os.path.exists(props_path):
+                with open(props_path, encoding="utf-8", errors="ignore") as f:
+                    lines = f.readlines()
+                new_lines = []
+                found = False
+                for line in lines:
+                    if line.strip().startswith("level-name") and "=" in line:
+                        new_lines.append(f"level-name={name}\n")
+                        found = True
+                    else:
+                        new_lines.append(line)
+                if not found:
+                    new_lines.append(f"level-name={name}\n")
+                with open(props_path, "w", encoding="utf-8") as f:
+                    f.writelines(new_lines)
+            _active_world_var.set(name)
+            show_toast(f"Active server set to: {name}", T["start"])
+        except Exception as ex:
+            show_toast(f"Error updating world: {ex}", T["stop"])
+
+    def _refresh_world_list():
+        for w in world_sel_frame.winfo_children():
+            w.destroy()
+        worlds = _get_world_folders()
+        active = _read_active_world()
+        _active_world_var.set(active)
+
+        row_top = ctk.CTkFrame(world_sel_frame, fg_color="transparent")
+        row_top.pack(fill="x", padx=10, pady=(8, 4))
+        ctk.CTkLabel(row_top,
+                     text=f"Found {len(worlds)} server instance{'s' if len(worlds)!=1 else ''} (subfolders with server.properties):",
+                     font=ctk.CTkFont(size=11), text_color=T["muted"]).pack(side="left")
+
+        if not worlds:
+            ctk.CTkLabel(world_sel_frame, text="No sub-servers found. Each server must have its own subfolder\ncontaining server.properties.",
+                         font=ctk.CTkFont(size=11), text_color=T["muted"]).pack(padx=14, pady=(0,8))
+        for wname in worlds:
+            wr = ctk.CTkFrame(world_sel_frame,
+                              fg_color=T["card"] if wname==active else "transparent",
+                              corner_radius=6)
+            wr.pack(fill="x", padx=10, pady=2)
+            is_active = (wname == active)
+            ctk.CTkLabel(wr, text="●" if is_active else "○", width=20,
+                         font=ctk.CTkFont(size=14),
+                         text_color=T["start"] if is_active else T["muted"]).pack(side="left", padx=(8,4), pady=6)
+            ctk.CTkLabel(wr, text=wname,
+                         font=ctk.CTkFont(size=12, weight="bold" if is_active else "normal"),
+                         text_color=T["start"] if is_active else T["text"]).pack(side="left")
+            if is_active:
+                ctk.CTkLabel(wr, text="  ← active", font=ctk.CTkFont(size=10),
+                             text_color=T["start"]).pack(side="left")
+            else:
+                ctk.CTkButton(wr, text="Switch to This", width=110, height=26,
+                              font=ctk.CTkFont(size=11),
+                              fg_color=T["sync"], hover_color=T["border"], text_color="#000",
+                              command=lambda n=wname: (_set_active_world(n), _refresh_world_list())
+                              ).pack(side="right", padx=6, pady=4)
+
+        # Manual / browse row
+        ctk.CTkFrame(world_sel_frame, height=1, fg_color=T["border"]).pack(fill="x", padx=10, pady=(6, 0))
+        man_row = ctk.CTkFrame(world_sel_frame, fg_color="transparent")
+        man_row.pack(fill="x", padx=10, pady=(6, 10))
+        ctk.CTkLabel(man_row, text="Or type:",
+                     font=ctk.CTkFont(size=11), text_color=T["muted"]).pack(side="left", padx=(0, 6))
+        _manual_world_var = ctk.StringVar()
+        ctk.CTkEntry(man_row, textvariable=_manual_world_var, width=150, height=28,
+                     font=ctk.CTkFont(size=12, family="Consolas"),
+                     fg_color=T["bg"], border_color=T["border"], text_color=T["text"],
+                     placeholder_text="server_folder_name").pack(side="left", padx=(0, 6))
+        ctk.CTkButton(man_row, text="Set", width=50, height=28,
+                      font=ctk.CTkFont(size=11), fg_color=T["start"],
+                      hover_color=T["start"], text_color="#000",
+                      command=lambda: (
+                          _manual_world_var.get().strip() and
+                          _set_active_world(_manual_world_var.get().strip()) and
+                          _refresh_world_list()
+                      )).pack(side="left", padx=(0, 6))
+        def _browse_srv_info():
+            import tkinter.filedialog as _fd
+            p = load_settings().get("srv_path", SRV_PATH)
+            chosen = _fd.askdirectory(title="Select server folder", initialdir=p)
+            if chosen:
+                _set_active_world(os.path.basename(chosen))
+                _refresh_world_list()
+        ctk.CTkButton(man_row, text="Browse…", width=72, height=28,
+                      font=ctk.CTkFont(size=11), fg_color="transparent",
+                      border_width=1, border_color=T["border"],
+                      text_color=T["muted"], hover_color=T["border"],
+                      command=_browse_srv_info).pack(side="left")
+
+    _refresh_world_list()
+    ctk.CTkButton(wh, text="Refresh", width=70, height=22,
+                  font=ctk.CTkFont(size=10), fg_color="transparent",
+                  border_width=1, border_color=T["border"],
+                  text_color=T["muted"], hover_color=T["border"],
+                  command=_refresh_world_list).pack(side="right")
 
     # ── Plugins ───────────────────────────────────────────
     plb, plh = section_card("Plugins")
@@ -1828,11 +2211,30 @@ def _build_world_creation_section(scroll):
                       ).pack(side="left", padx=(0,20))
     ctk.CTkLabel(r0, text="MC Version", font=ctk.CTkFont(size=12),
                  text_color=T["text"], width=90, anchor="w").pack(side="left")
-    mc_ver_var = ctk.StringVar(value="latest")
-    ctk.CTkEntry(r0, textvariable=mc_ver_var, width=120, height=30,
-                 font=ctk.CTkFont(size=12, family="Consolas"),
-                 fg_color=T["bg"], border_color=T["border"], text_color=T["text"],
-                 placeholder_text="e.g. 1.21.1").pack(side="left")
+    MC_VERSIONS = [
+        "latest",
+        "1.21.4", "1.21.3", "1.21.1", "1.21",
+        "1.20.6", "1.20.4", "1.20.2", "1.20.1", "1.20",
+        "1.19.4", "1.19.3", "1.19.2", "1.19.1", "1.19",
+        "1.18.2", "1.18.1", "1.18",
+        "1.17.1", "1.17",
+        "1.16.5", "1.16.4", "1.16.3", "1.16.2", "1.16.1", "1.16",
+        "1.15.2", "1.15.1", "1.15",
+        "1.14.4", "1.14.3", "1.14.2", "1.14.1", "1.14",
+        "1.13.2", "1.13.1", "1.13",
+        "1.12.2", "1.12.1", "1.12",
+        "1.8.9", "1.8",
+    ]
+    _s_mc = load_settings()
+    mc_ver_var = ctk.StringVar(value=_s_mc.get("mc_version", "latest"))
+    def _save_mc_ver(v): update_setting("mc_version", v)
+    ctk.CTkOptionMenu(r0, values=MC_VERSIONS, variable=mc_ver_var,
+                      command=_save_mc_ver,
+                      font=ctk.CTkFont(size=12), width=140, height=30,
+                      fg_color=T["bg"], button_color=T["border"],
+                      button_hover_color=T["muted"], text_color=T["text"],
+                      dropdown_fg_color=T["card"], dropdown_text_color=T["text"],
+                      dropdown_hover_color=T["border"]).pack(side="left")
 
     r1 = ctk.CTkFrame(wcb, fg_color="transparent"); r1.pack(fill="x", pady=(4,0))
     ctk.CTkLabel(r1, text="World Name", font=ctk.CTkFont(size=12),
@@ -1926,41 +2328,80 @@ def _build_world_creation_section(scroll):
             return False
 
     def _paper_url(ver):
+        # PaperMC fill.papermc.io v3 API
+        # GET /v3/projects/paper           → {"versions": ["1.21.1", ...], ...}
+        # GET /v3/projects/paper/versions/{ver}/builds
+        #   → {"builds": [{"channel":"STABLE","downloads":{"server:default":{"url":"..."}}},...]}
         base = "https://fill.papermc.io/v3/projects/paper"
+        hdrs = {"User-Agent": "MC-CTRL/1.0 (github.com/GamerMahir07)"}
         try:
-            req = urllib.request.Request(base, headers={"User-Agent":"MC-CTRL/1.0"})
-            with urllib.request.urlopen(req, timeout=15) as r:
+            with urllib.request.urlopen(
+                    urllib.request.Request(base, headers=hdrs), timeout=15) as r:
                 data = json.loads(r.read())
-            versions = [v for grp in data.get("version_groups",{}).values() for v in grp.get("versions",[])]
-            if ver == "latest": ver = versions[-1]
-            req2 = urllib.request.Request(f"{base}/versions/{ver}/builds", headers={"User-Agent":"MC-CTRL/1.0"})
-            with urllib.request.urlopen(req2, timeout=15) as r2:
-                builds = json.loads(r2.read())
-            stable = [b for b in builds if b.get("channel","").upper()=="STABLE"] or builds
-            return stable[-1]["downloads"]["server:default"]["url"], ver
-        except Exception as ex: return None, str(ex)
+            # v3 returns a flat "versions" list
+            versions = data.get("versions", [])
+            if not versions:
+                return None, "No versions returned by PaperMC API"
+            if ver == "latest":
+                ver = versions[-1]
+            elif ver not in versions:
+                return None, f"Version {ver} not found. Available: {', '.join(versions[-5:])}"
+            builds_url = f"{base}/versions/{ver}/builds"
+            with urllib.request.urlopen(
+                    urllib.request.Request(builds_url, headers=hdrs), timeout=15) as r2:
+                bdata = json.loads(r2.read())
+            # builds is nested under "builds" key in v3
+            builds = bdata.get("builds", bdata) if isinstance(bdata, dict) else bdata
+            if not builds:
+                return None, f"No builds found for Paper {ver}"
+            stable = [b for b in builds if b.get("channel","").upper() == "STABLE"]
+            chosen = stable[-1] if stable else builds[-1]
+            dl_url = chosen["downloads"]["server:default"]["url"]
+            return dl_url, ver
+        except Exception as ex:
+            return None, str(ex)
 
     def _purpur_url(ver):
+        # Purpur API: https://api.purpurmc.org/v2/purpur
+        # → {"versions": [...]}  latest is last
+        # Download: https://api.purpurmc.org/v2/purpur/{ver}/latest/download
         try:
-            req = urllib.request.Request("https://api.purpurmc.org/v2/purpur", headers={"User-Agent":"MC-CTRL/1.0"})
-            with urllib.request.urlopen(req, timeout=15) as r:
+            with urllib.request.urlopen(
+                    urllib.request.Request("https://api.purpurmc.org/v2/purpur",
+                                           headers={"User-Agent":"MC-CTRL/1.0"}),
+                    timeout=15) as r:
                 data = json.loads(r.read())
-            versions = data.get("versions",[])
-            if ver == "latest": ver = versions[-1]
+            versions = data.get("versions", [])
+            if not versions:
+                return None, "No Purpur versions returned"
+            if ver == "latest":
+                ver = versions[-1]
+            elif ver not in versions:
+                return None, f"Purpur {ver} not found. Available: {', '.join(versions[-5:])}"
             return f"https://api.purpurmc.org/v2/purpur/{ver}/latest/download", ver
-        except Exception as ex: return None, str(ex)
+        except Exception as ex:
+            return None, str(ex)
 
     def _vanilla_url(ver):
+        # Mojang version manifest
+        MF = "https://launchermeta.mojang.com/mc/game/version_manifest_v2.json"
         try:
-            with urllib.request.urlopen("https://launchermeta.mojang.com/mc/game/version_manifest.json", timeout=15) as r:
+            with urllib.request.urlopen(MF, timeout=15) as r:
                 mf = json.loads(r.read())
-            if ver == "latest": ver = mf["latest"]["release"]
-            vi = next((v for v in mf["versions"] if v["id"]==ver), None)
-            if not vi: return None, f"Version {ver} not found"
+            if ver == "latest":
+                ver = mf["latest"]["release"]
+            vi = next((v for v in mf["versions"]
+                        if v["id"] == ver and v["type"] == "release"), None)
+            if not vi:
+                return None, f"Vanilla release {ver} not found"
             with urllib.request.urlopen(vi["url"], timeout=15) as r2:
                 vd = json.loads(r2.read())
-            return vd["downloads"]["server"]["url"], ver
-        except Exception as ex: return None, str(ex)
+            srv = vd.get("downloads", {}).get("server")
+            if not srv:
+                return None, f"No server download for {ver}"
+            return srv["url"], ver
+        except Exception as ex:
+            return None, str(ex)
 
     def _do_create():
         s = load_settings(); path = s.get("srv_path", SRV_PATH)
@@ -2084,8 +2525,7 @@ def setup(ctx):
 def build_playit_tab(parent):
     global playit_proc, playit_tunnel, playit_log_lines
 
-    scroll = ctk.CTkScrollableFrame(parent, fg_color="transparent")
-    scroll.pack(fill="both", expand=True)
+    scroll = make_scroll_frame(parent, fg_color="transparent")
 
     def _card(title, subtitle=None):
         f = ctk.CTkFrame(scroll, fg_color=T["card"], border_color=T["border"],
@@ -2158,7 +2598,54 @@ def build_playit_tab(parent):
                   fg_color=T["sync"], hover_color=T["sync"], text_color="#000",
                   command=_dl_playit).pack(side="left")
     pt_status_lbl.pack(anchor="w", pady=(4,0))
-    ctk.CTkLabel(sb, text="On first run, open the claim URL in the log to link your account.",
+
+    # Agent secret key (for users who already have an account)
+    ctk.CTkFrame(sb, height=1, fg_color=T["border"]).pack(fill="x", pady=(8,6))
+    ctk.CTkLabel(sb, text="Already have a playit.gg account?",
+                 font=ctk.CTkFont(size=11, weight="bold"),
+                 text_color=T["text"]).pack(anchor="w")
+    ctk.CTkLabel(sb, text=(
+        "If you've already set up the agent and have your secret key, paste it below.\n"
+        "The agent will use it automatically on next start — no browser claim needed."
+    ), font=ctk.CTkFont(size=10), text_color=T["muted"]).pack(anchor="w", pady=(2,4))
+
+    key_row = ctk.CTkFrame(sb, fg_color="transparent"); key_row.pack(fill="x", pady=(0,4))
+    ctk.CTkLabel(key_row, text="Secret Key", font=ctk.CTkFont(size=11),
+                 text_color=T["text"], width=90, anchor="w").pack(side="left")
+    _s = load_settings()
+    playit_key_var = ctk.StringVar(value=_s.get("playit_secret_key",""))
+    key_entry = ctk.CTkEntry(key_row, textvariable=playit_key_var, height=28,
+                              font=ctk.CTkFont(size=11, family="Consolas"),
+                              fg_color=T["bg"], border_color=T["border"],
+                              text_color=T["text"], show="•",
+                              placeholder_text="paste your secret key here")
+    key_entry.pack(side="left", fill="x", expand=True, padx=(0,8))
+
+    def _toggle_key_vis():
+        cur = key_entry.cget("show")
+        key_entry.configure(show="" if cur == "•" else "•")
+        vis_btn.configure(text="Hide" if cur == "•" else "Show")
+    vis_btn = ctk.CTkButton(key_row, text="Show", width=52, height=28,
+                             font=ctk.CTkFont(size=10), fg_color="transparent",
+                             border_width=1, border_color=T["border"],
+                             text_color=T["muted"], hover_color=T["border"],
+                             command=_toggle_key_vis)
+    vis_btn.pack(side="left")
+
+    def _save_key(*_):
+        update_setting("playit_secret_key", playit_key_var.get().strip())
+    playit_key_var.trace_add("write", _save_key)
+
+    def _open_claim_link():
+        import webbrowser
+        webbrowser.open("https://playit.gg/login")
+    ctk.CTkButton(sb, text="Open playit.gg to get your key →", height=26,
+                  font=ctk.CTkFont(size=10), fg_color="transparent",
+                  border_width=1, border_color=T["sync"],
+                  text_color=T["sync"], hover_color=T["border"],
+                  command=_open_claim_link).pack(anchor="w", pady=(0,4))
+
+    ctk.CTkLabel(sb, text="First run without a key: a claim URL appears in the agent log below.",
                  font=ctk.CTkFont(size=10), text_color=T["muted"]).pack(anchor="w")
 
     cb, ch = _card("Tunnel Control")
@@ -2181,27 +2668,198 @@ def build_playit_tab(parent):
             pt_log.configure(state="normal"); pt_log.insert("end", line+"\n")
             pt_log.configure(state="disabled"); pt_log.see("end")
         except: pass
+    _ansi_re = re.compile(r'\x1b(?:\[[0-9;]*[mABCDEFGHJKSTfhilmnprsuu]|\][^\x07]*\x07|[()][AB012]|[=>])')
+    _coord_re = re.compile(r'\x1b\[\d+;\d+H')  # cursor positioning
+
+    def _handle_line(raw_bytes, prefix=""):
+        """Decode one raw line from playit, strip ANSI, log and scan."""
+        try:
+            line = raw_bytes.decode("utf-8", errors="replace").rstrip()
+        except Exception:
+            line = repr(raw_bytes)
+        # Strip ANSI/VT100 escape sequences so text is readable
+        clean = _ansi_re.sub("", _coord_re.sub(" ", line)).strip()
+        if not clean:
+            return
+        tagged = f"{prefix}{clean}" if prefix else clean
+        playit_log_lines.append(tagged)
+        if len(playit_log_lines) > 500:
+            playit_log_lines[:] = playit_log_lines[-500:]
+        m = _playit_addr_re.search(clean) or _playit_arrow_re.search(clean)
+        if m:
+            app.after(0, _set_addr, m.group(1))
+        cm = _playit_claim_re.search(clean)
+        if cm:
+            url = cm.group(1)
+            app.after(0, _append_ptlog, f"[MC CTRL] >>> CLAIM URL: {url} <<<")
+            app.after(0, show_toast, "Open claim URL in browser!", T["handoff"], 8000)
+        app.after(0, _append_ptlog, tagged)
+
+    def _read_stream_bytes(stream, prefix=""):
+        """Read a binary stream line by line."""
+        try:
+            for raw in iter(stream.readline, b""):
+                if not raw:
+                    break
+                _handle_line(raw, prefix)
+        except Exception:
+            pass
+
     def _read_pt(proc):
-        for raw in iter(proc.stdout.readline, ""):
-            if not raw: break
-            line = raw.strip()
-            playit_log_lines.append(line)
-            if len(playit_log_lines)>500: playit_log_lines[:]=playit_log_lines[-500:]
-            m = _playit_addr_re.search(line)
-            if m: app.after(0, _set_addr, m.group(1))
-            app.after(0, _append_ptlog, line)
+        _read_stream_bytes(proc.stdout, "")
+        code = proc.wait()
+        if code == 0:
+            msg = "[MC CTRL] Agent exited cleanly."
+        else:
+            msg = (f"[MC CTRL] Agent exited with code {code}. "
+                   "If your secret key is wrong, clear it and restart — "
+                   "a claim URL will appear for first-time setup.")
+        app.after(0, _append_ptlog, msg)
         app.after(0, _set_tst, "● Stopped", T["stop"])
+
+    def _read_stderr_pt(proc):
+        """Read stderr separately — playit prints errors here."""
+        _read_stream_bytes(proc.stderr, "[stderr] ")
+
+    def _watch_tunnel_toml(exe_path):
+        """
+        Fallback: poll TOML files and recent log lines for tunnel address.
+        playit writes %APPDATA%/playit/*.toml or next to the exe.
+        """
+        import glob, time as _time
+        appdata = os.environ.get("APPDATA", "")
+        exe_dir = os.path.dirname(exe_path)
+        # Broader address pattern for TOML values
+        toml_addr_re = re.compile(
+            r'(?:address|host|tunnel|alloc)\s*=\s*["\']?((?:[\w\-]+\.)+(?:ply\.gg|playit\.gg)(?::\d+)?)',
+            re.IGNORECASE)
+        seen = set()
+
+        def _scan_toml(path):
+            try:
+                txt = open(path, encoding="utf-8", errors="ignore").read()
+                for m in toml_addr_re.finditer(txt):
+                    addr = m.group(1)
+                    if addr not in seen:
+                        seen.add(addr)
+                        app.after(0, _set_addr, addr)
+                        app.after(0, _append_ptlog,
+                                  f"[MC CTRL] Tunnel address from config: {addr}")
+            except Exception:
+                pass
+
+        def _scan_log_lines():
+            for line in list(playit_log_lines):
+                m = _playit_addr_re.search(line)
+                if m:
+                    addr = m.group(1)
+                    if addr not in seen:
+                        seen.add(addr)
+                        app.after(0, _set_addr, addr)
+
+        for _ in range(120):   # poll for up to 6 minutes
+            if not (playit_proc and playit_proc.poll() is None):
+                break
+            # Dynamically discover TOML files (playit may create them after start)
+            toml_files = []
+            if appdata:
+                toml_files += glob.glob(os.path.join(appdata, "playit", "*.toml"))
+                toml_files += glob.glob(os.path.join(appdata, "playit", "**", "*.toml"), recursive=True)
+            toml_files += glob.glob(os.path.join(exe_dir, "*.toml"))
+            for p in toml_files:
+                _scan_toml(p)
+            _scan_log_lines()
+            _time.sleep(3)
+
     def _start_pt():
         global playit_proc
         exe = playit_path_var.get().strip()
-        if not exe or not os.path.exists(exe): show_toast("Set playit.exe path first!",T["stop"]); return
-        if playit_proc and playit_proc.poll() is None: show_toast("Already running.",T["muted"]); return
+        if not exe or not os.path.exists(exe):
+            show_toast("Set playit.exe path first!", T["stop"]); return
+        if playit_proc and playit_proc.poll() is None:
+            show_toast("Already running.", T["muted"]); return
+
+        # Inject secret key into playit's TOML config (the only reliable method).
+        # playit reads %APPDATA%\playit\playit.toml  →  secret_key = "..."
+        # We patch that file before launching so no CLI flags are needed.
+        saved_key = load_settings().get("playit_secret_key", "").strip()
+        cmd = [exe]
+        env = os.environ.copy()
+        if saved_key:
+            _injected_path = None
+            try:
+                appdata = os.environ.get("APPDATA", "")
+                if appdata:
+                    pt_dir = os.path.join(appdata, "playit")
+                    os.makedirs(pt_dir, exist_ok=True)
+                    toml_path = os.path.join(pt_dir, "playit.toml")
+                    if os.path.exists(toml_path):
+                        with open(toml_path, encoding="utf-8", errors="ignore") as _tf:
+                            toml_lines = _tf.readlines()
+                        new_toml = []
+                        found_key = False
+                        for _tl in toml_lines:
+                            if _tl.strip().startswith("secret_key"):
+                                new_toml.append('secret_key = "' + saved_key + '"\n')
+                                found_key = True
+                            else:
+                                new_toml.append(_tl)
+                        if not found_key:
+                            new_toml.insert(0, 'secret_key = "' + saved_key + '"\n')
+                    else:
+                        new_toml = ['secret_key = "' + saved_key + '"\n']
+                    with open(toml_path, "w", encoding="utf-8") as _tf:
+                        _tf.writelines(new_toml)
+                    _injected_path = toml_path
+            except Exception:
+                pass
+            # Also write next to the exe as a fallback for portable installs
+            try:
+                exe_toml = os.path.join(os.path.dirname(exe), "playit.toml")
+                with open(exe_toml, "w") as _tf2:
+                    _tf2.write('secret_key = "' + saved_key + '"\n')
+                if not _injected_path:
+                    _injected_path = exe_toml
+            except Exception:
+                pass
+            # Show what we actually wrote so user can verify
+            try:
+                _toml_preview = open(_injected_path, encoding="utf-8").read().strip()
+            except Exception:
+                _toml_preview = "(could not read)"
+            app.after(0, _append_ptlog,
+                      f"[MC CTRL] Secret key written to: {_injected_path}")
+            app.after(0, _append_ptlog,
+                      f"[MC CTRL] TOML contents: {_toml_preview}")
+
         try:
-            playit_proc = subprocess.Popen([exe], stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                                           text=True, bufsize=1, creationflags=CREATE_NO_WINDOW)
-            _set_tst("● Running", T["start"]); log("-- playit.gg started --")
-            threading.Thread(target=_read_pt, args=(playit_proc,), daemon=True).start()
-        except Exception as ex: show_toast(f"Failed: {ex}",T["stop"]); _set_tst("● Error",T["stop"])
+            # Hide console window; use unbuffered binary pipes so we get
+            # output immediately even though playit is not a tty.
+            _si = subprocess.STARTUPINFO()
+            _si.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+            _si.wShowWindow = 0   # SW_HIDE
+            playit_proc = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,     # separate so we capture both
+                stdin=subprocess.DEVNULL,
+                text=False,                 # binary — we decode per-line ourselves
+                bufsize=0,                  # unbuffered — get lines immediately
+                creationflags=subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW,
+                startupinfo=_si,
+                env=env,
+            )
+            _set_tst("● Running", T["start"])
+            log("-- playit.gg started --")
+            app.after(0, _append_ptlog,
+                      "[MC CTRL] Agent started. Waiting for tunnel address...")
+            # Read stdout and stderr on separate threads so neither blocks
+            threading.Thread(target=_read_pt,        args=(playit_proc,), daemon=True).start()
+            threading.Thread(target=_read_stderr_pt, args=(playit_proc,), daemon=True).start()
+            threading.Thread(target=_watch_tunnel_toml, args=(exe,),     daemon=True).start()
+        except Exception as ex:
+            show_toast(f"Failed to start playit: {ex}", T["stop"])
+            _set_tst("● Error", T["stop"])
     def _stop_pt():
         global playit_proc, playit_tunnel
         if playit_proc:
@@ -2230,27 +2888,370 @@ def build_playit_tab(parent):
     pt_log = ctk.CTkTextbox(lb, font=ctk.CTkFont(size=11,family="Consolas"),
                              wrap="word", state="disabled", height=220,
                              fg_color=T["bg"], text_color=T["text"]); pt_log.pack(fill="x")
+    # Restore log lines saved from before a theme rebuild
+    if playit_log_lines:
+        pt_log.configure(state="normal")
+        for _saved_line in playit_log_lines:
+            pt_log.insert("end", _saved_line + "\n")
+        pt_log.configure(state="disabled")
+        pt_log.see("end")
+    # If tunnel address already known, restore it
+    if playit_tunnel:
+        _set_addr(playit_tunnel)
+    def _clear_ptlog():
+        global playit_log_lines
+        playit_log_lines.clear()
+        pt_log.configure(state="normal")
+        pt_log.delete("1.0","end")
+        pt_log.configure(state="disabled")
     ctk.CTkButton(lh,text="Clear",width=58,height=22,font=ctk.CTkFont(size=10),
                   fg_color="transparent",border_width=1,border_color=T["border"],
                   text_color=T["muted"],hover_color=T["border"],
-                  command=lambda:(pt_log.configure(state="normal"),
-                                  pt_log.delete("1.0","end"),
-                                  pt_log.configure(state="disabled"))).pack(side="right")
+                  command=_clear_ptlog).pack(side="right")
 
-    gb, _ = _card("How to Use")
-    ctk.CTkLabel(gb, text=(
-        "1.  Click Auto-Download to grab the playit agent (or browse to an existing playit.exe).\n"
-        "2.  Click Start — a claim URL appears in the log on first run. Open it in your browser.\n"
-        "3.  Log in / create a free account and click Continue to link this agent.\n"
-        "4.  playit creates a Minecraft tunnel automatically. The address shows above.\n"
-        "5.  Share that address with friends — no port forwarding needed!\n"
-        "6.  Click Stop to shut the tunnel down."
-    ), font=ctk.CTkFont(size=12), text_color=T["muted"], justify="left", wraplength=840
-    ).pack(anchor="w")
+    gb, _ = _card("Setup Guide")
+
+    def _step(parent, num, title, body, tip=None):
+        sf = ctk.CTkFrame(parent, fg_color=T["bg"], border_color=T["border"],
+                          border_width=1, corner_radius=8)
+        sf.pack(fill="x", pady=(0, 8))
+        nb = ctk.CTkFrame(sf, fg_color=T["sync"], width=28, height=28, corner_radius=14)
+        nb.pack(side="left", anchor="n", padx=(12, 10), pady=12)
+        nb.pack_propagate(False)
+        ctk.CTkLabel(nb, text=str(num), font=ctk.CTkFont(size=12, weight="bold"),
+                     text_color="#000000").place(relx=0.5, rely=0.5, anchor="center")
+        tb = ctk.CTkFrame(sf, fg_color="transparent")
+        tb.pack(side="left", fill="x", expand=True, pady=10, padx=(0, 12))
+        ctk.CTkLabel(tb, text=title, font=ctk.CTkFont(size=12, weight="bold"),
+                     text_color=T["text"], anchor="w").pack(anchor="w")
+        ctk.CTkLabel(tb, text=body, font=ctk.CTkFont(size=11),
+                     text_color=T["muted"], justify="left",
+                     wraplength=680, anchor="w").pack(anchor="w", pady=(2, 0))
+        if tip:
+            tf = ctk.CTkFrame(tb, fg_color=T["card"], corner_radius=6)
+            tf.pack(anchor="w", fill="x", pady=(6, 0))
+            ctk.CTkLabel(tf, text=f"\U0001f4a1  {tip}", font=ctk.CTkFont(size=10),
+                         text_color=T["sync"], justify="left",
+                         wraplength=660, anchor="w").pack(padx=10, pady=6)
+
+    _step(gb, 1,
+          "Download the playit agent",
+          "Click the  \u2b07 Auto-Download  button in the Setup card above. It fetches the latest\n"
+          "playit-windows.exe directly from GitHub and saves it next to launcher.pyw.\n"
+          "You can also point to an existing playit.exe using Browse.",
+          "Only do this once \u2014 the same exe works forever, it updates itself automatically.")
+
+    _step(gb, 2,
+          "Start the agent",
+          "Click  \u25b6 Start  in the Tunnel Control card. The status dot turns green\n"
+          "and the Agent Log starts filling with output from playit.",
+          "Start the agent before or at the same time as your Minecraft server.")
+
+    _step(gb, 3,
+          "Claim your account (first run only)",
+          "On the very first run playit doesn't know who you are yet. Look in the Agent Log\n"
+          "for a line like:\n\n"
+          "      visit https://playit.gg/claim/xxxxxxxxxxxxxxxx to setup your agent\n\n"
+          "Open that URL in your browser, sign in or create a free account, and click\n"
+          "Continue. This links the agent on your PC to your playit.gg account.\n"
+          "You only ever need to do this once.",
+          "The claim URL is unique to this installation. Don't share it with anyone.")
+
+    _step(gb, 4,
+          "Wait for the tunnel address",
+          "After claiming, playit.gg automatically creates a Minecraft tunnel.\n"
+          "Within a few seconds the address (something like  xxxxx.at.ply.gg) appears\n"
+          "in big text next to the status dot.\n"
+          "Click  Copy Address  to copy it to your clipboard.",
+          "If the address doesn't appear after 30 seconds, stop and restart the agent.")
+
+    _step(gb, 5,
+          "Share with your friends",
+          "Give the address to your friends. They open Minecraft \u2192\n"
+          "Multiplayer \u2192 Add Server (or Direct Connect) and paste it exactly as shown.\n"
+          "No port number is needed \u2014 playit routes port 25565 automatically.",
+          "Friends don't need a playit account. Only you (the host) need one.")
+
+    _step(gb, 6,
+          "Stop the tunnel when done",
+          "Click  \u25a0 Stop  when you're finished. The tunnel goes offline immediately.\n"
+          "Next session, click  \u25b6 Start  again \u2014 the same address comes back.",
+          None)
+
+    faq_f = ctk.CTkFrame(gb, fg_color=T["card"], border_color=T["border"],
+                          border_width=1, corner_radius=8)
+    faq_f.pack(fill="x", pady=(4, 0))
+    ctk.CTkLabel(faq_f, text="Troubleshooting",
+                 font=ctk.CTkFont(size=11, weight="bold"),
+                 text_color=T["text"]).pack(anchor="w", padx=14, pady=(10, 4))
+    ctk.CTkFrame(faq_f, height=1, fg_color=T["border"]).pack(fill="x", padx=14)
+    ctk.CTkLabel(faq_f, text=(
+        "Friends can't connect?   \u2192   Make sure your MC server is running AND \u25b6 Start is active.\n"
+        "No address appears?      \u2192   Check the Agent Log for errors; try Stop then Start again.\n"
+        "Claim URL missing?       \u2192   The agent may already be claimed. Check playit.gg \u2192 Agents.\n"
+        "Address keeps changing?  \u2192   Free plan addresses are persistent \u2014 they don't change.\n"
+        "Lag / high ping?         \u2192   Upgrade to Premium ($3/mo) to pick a nearby server region.\n"
+        "Port already in use?     \u2192   Make sure no other playit instance is already running."
+    ), font=ctk.CTkFont(size=11), text_color=T["muted"],
+       justify="left", wraplength=820).pack(anchor="w", padx=14, pady=(8, 12))
+
     ctk.CTkFrame(scroll, height=12, fg_color="transparent").pack()
 
-# ── Settings tab ─────────────────────────────────────────
-def build_settings_tab(parent):
+# ── MULTI CTRL tab ────────────────────────────────────────
+# Up to 3 independent server columns, each with its own
+# path input, log, start/stop buttons.
+# A shared chat bar at the bottom sends to whichever server
+# is selected.
+
+_mc_servers = {}   # slot (0,1,2) -> {proc, stdin, pid, log_box, path_var, ...}
+
+def build_multictrl_tab(parent):
+    global _mc_servers
+
+    MAX_SLOTS = 3
+    # Slot state
+    slots = {}
+    for i in range(MAX_SLOTS):
+        slots[i] = {
+            "proc":     None,
+            "stdin":    None,
+            "path_var": ctk.StringVar(value=""),
+            "log_box":  None,
+            "status":   None,   # label widget
+            "running":  False,
+        }
+    _mc_servers = slots
+
+    # ── Layout: top toolbar + columns + shared chat ────────
+    parent.rowconfigure(0, weight=0)
+    parent.rowconfigure(1, weight=1)
+    parent.rowconfigure(2, weight=0)
+    parent.columnconfigure(0, weight=1)
+
+    # ── Top toolbar ────────────────────────────────────────
+    toolbar = ctk.CTkFrame(parent, fg_color=T["card"],
+                            border_color=T["border"], border_width=1,
+                            corner_radius=0)
+    toolbar.grid(row=0, column=0, sticky="ew")
+    ctk.CTkLabel(toolbar, text="⊞  MULTI CTRL",
+                 font=ctk.CTkFont(size=13, weight="bold"),
+                 text_color=T["handoff"]).pack(side="left", padx=14, pady=8)
+    ctk.CTkLabel(toolbar, text="— control up to 3 servers simultaneously",
+                 font=ctk.CTkFont(size=10), text_color=T["muted"]).pack(side="left")
+
+    # ── Column area ────────────────────────────────────────
+    col_area = ctk.CTkFrame(parent, fg_color="transparent")
+    col_area.grid(row=1, column=0, sticky="nsew", padx=4, pady=4)
+    for i in range(MAX_SLOTS):
+        col_area.columnconfigure(i, weight=1, uniform="col")
+    col_area.rowconfigure(0, weight=1)
+
+    def _mc_log(slot, msg):
+        """Append msg to slot's log box (call from any thread via app.after)."""
+        lb = slots[slot]["log_box"]
+        if lb is None: return
+        try:
+            lb.configure(state="normal")
+            lb.insert("end", msg + "\n")
+            lb.configure(state="disabled")
+            lb.see("end")
+        except: pass
+
+    def _mc_set_status(slot, txt, color):
+        lbl = slots[slot]["status"]
+        if lbl:
+            try: lbl.configure(text=txt, text_color=color)
+            except: pass
+
+    def _mc_read_output(slot, proc):
+        for raw in iter(proc.stdout.readline, ""):
+            if not raw: break
+            app.after(0, _mc_log, slot, raw.rstrip())
+        app.after(0, _mc_set_status, slot, "● Stopped", T["stop"])
+        slots[slot]["running"] = False
+        slots[slot]["proc"]    = None
+        slots[slot]["stdin"]   = None
+
+    def _mc_start(slot):
+        path = slots[slot]["path_var"].get().strip()
+        if not path or not os.path.isdir(path):
+            show_toast(f"Server {slot+1}: set a valid world/server folder first.", T["stop"])
+            return
+        if slots[slot]["running"]:
+            show_toast(f"Server {slot+1} is already running.", T["muted"]); return
+        s = load_settings()
+        java = s.get("java_path", JAVA_PATH)
+        jar  = os.path.join(path, "server.jar")
+        if not os.path.exists(jar):
+            show_toast(f"Server {slot+1}: no server.jar found in that folder.", T["stop"])
+            return
+        # EULA check
+        if not _check_eula(path): return
+        try:
+            cmd = [java,
+                   "-Xms512M", "-Xmx2G",
+                   "-XX:+UseG1GC",
+                   "-jar", jar, "--nogui"]
+            proc = subprocess.Popen(
+                cmd, cwd=path,
+                stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT, text=True, bufsize=1,
+                creationflags=CREATE_NO_WINDOW)
+            slots[slot]["proc"]    = proc
+            slots[slot]["stdin"]   = proc.stdin
+            slots[slot]["running"] = True
+            _mc_set_status(slot, "● Running", T["start"])
+            app.after(0, _mc_log, slot, f"-- Server {slot+1} started --")
+            threading.Thread(target=_mc_read_output, args=(slot, proc),
+                             daemon=True).start()
+        except Exception as ex:
+            show_toast(f"Server {slot+1} failed: {ex}", T["stop"])
+
+    def _mc_stop(slot):
+        proc = slots[slot]["proc"]
+        if proc:
+            try:
+                slots[slot]["stdin"].write("stop\n")
+                slots[slot]["stdin"].flush()
+            except: pass
+            app.after(3000, lambda p=proc: p.terminate() if p.poll() is None else None)
+        slots[slot]["running"] = False
+        slots[slot]["proc"]    = None
+        slots[slot]["stdin"]   = None
+        _mc_set_status(slot, "● Stopped", T["stop"])
+        app.after(0, _mc_log, slot, f"-- Server {slot+1} stopped --")
+
+    # ── Build each column ──────────────────────────────────
+    for i in range(MAX_SLOTS):
+        col = ctk.CTkFrame(col_area, fg_color=T["card"],
+                           border_color=T["border"], border_width=1,
+                           corner_radius=10)
+        col.grid(row=0, column=i, sticky="nsew", padx=4, pady=0)
+        col.rowconfigure(2, weight=1)
+        col.columnconfigure(0, weight=1)
+
+        # ── Header ────────────────────────────────────────
+        hdr = ctk.CTkFrame(col, fg_color=T["bg"], corner_radius=8)
+        hdr.grid(row=0, column=0, sticky="ew", padx=8, pady=(8,4))
+
+        ctk.CTkLabel(hdr, text=f"Server {i+1}",
+                     font=ctk.CTkFont(size=12, weight="bold"),
+                     text_color=T["text"]).pack(side="left", padx=10, pady=6)
+        st_lbl = ctk.CTkLabel(hdr, text="● Stopped",
+                               font=ctk.CTkFont(size=11, weight="bold"),
+                               text_color=T["stop"])
+        st_lbl.pack(side="right", padx=10)
+        slots[i]["status"] = st_lbl
+
+        # ── Path input ────────────────────────────────────
+        path_frame = ctk.CTkFrame(col, fg_color="transparent")
+        path_frame.grid(row=1, column=0, sticky="ew", padx=8, pady=(0,4))
+        path_frame.columnconfigure(0, weight=1)
+
+        path_entry = ctk.CTkEntry(path_frame,
+                                   textvariable=slots[i]["path_var"],
+                                   height=28,
+                                   font=ctk.CTkFont(size=10, family="Consolas"),
+                                   fg_color=T["bg"], border_color=T["border"],
+                                   text_color=T["text"],
+                                   placeholder_text=f"Server {i+1} folder path…")
+        path_entry.grid(row=0, column=0, sticky="ew", padx=(0,4))
+
+        def _browse_mc(slot=i):
+            import tkinter.filedialog as fd
+            p = fd.askdirectory(title=f"Select Server {slot+1} Folder")
+            if p: slots[slot]["path_var"].set(p)
+
+        ctk.CTkButton(path_frame, text="…", width=28, height=28,
+                      font=ctk.CTkFont(size=11), corner_radius=6,
+                      fg_color=T["bg"], border_width=1,
+                      border_color=T["border"], text_color=T["muted"],
+                      hover_color=T["border"],
+                      command=lambda s=i: _browse_mc(s)
+                      ).grid(row=0, column=1)
+
+        # ── Start / Stop buttons ──────────────────────────
+        btn_row = ctk.CTkFrame(path_frame, fg_color="transparent")
+        btn_row.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(4,0))
+        ctk.CTkButton(btn_row, text="▶ Start", height=26,
+                      font=ctk.CTkFont(size=11),
+                      fg_color=T["start"], hover_color=T["start"],
+                      text_color="#000",
+                      command=lambda s=i: threading.Thread(
+                          target=_mc_start, args=(s,), daemon=True).start()
+                      ).pack(side="left", expand=True, fill="x", padx=(0,3))
+        ctk.CTkButton(btn_row, text="■ Stop", height=26,
+                      font=ctk.CTkFont(size=11),
+                      fg_color=T["stop"], hover_color=T["stop"],
+                      text_color="#fff",
+                      command=lambda s=i: _mc_stop(s)
+                      ).pack(side="left", expand=True, fill="x", padx=(3,0))
+
+        # ── Log box ───────────────────────────────────────
+        lb = ctk.CTkTextbox(col,
+                             font=ctk.CTkFont(size=10, family="Consolas"),
+                             wrap="word", state="disabled",
+                             fg_color=T["bg"], text_color=T["text"])
+        lb.grid(row=2, column=0, sticky="nsew", padx=8, pady=(0,8))
+        slots[i]["log_box"] = lb
+
+    # ── Shared chat bar ────────────────────────────────────
+    chat_bar = ctk.CTkFrame(parent, fg_color=T["card"],
+                             border_color=T["border"], border_width=1,
+                             corner_radius=0)
+    chat_bar.grid(row=2, column=0, sticky="ew", padx=0, pady=0)
+    chat_bar.columnconfigure(1, weight=1)
+
+    # Target selector
+    target_var = ctk.StringVar(value="Server 1")
+    ctk.CTkLabel(chat_bar, text="Send to:",
+                 font=ctk.CTkFont(size=11), text_color=T["muted"]
+                 ).grid(row=0, column=0, padx=(10,4), pady=8)
+    target_menu = ctk.CTkOptionMenu(
+        chat_bar,
+        values=["Server 1", "Server 2", "Server 3", "All Servers"],
+        variable=target_var,
+        font=ctk.CTkFont(size=11), width=120, height=30,
+        fg_color=T["bg"], button_color=T["border"],
+        button_hover_color=T["muted"], text_color=T["text"],
+        dropdown_fg_color=T["card"], dropdown_text_color=T["text"],
+        dropdown_hover_color=T["border"])
+    target_menu.grid(row=0, column=1, padx=(0,6), pady=8, sticky="w")
+
+    cmd_entry = ctk.CTkEntry(chat_bar, height=30,
+                              font=ctk.CTkFont(size=12),
+                              fg_color=T["bg"], border_color=T["border"],
+                              text_color=T["text"],
+                              placeholder_text="command or chat…")
+    cmd_entry.grid(row=0, column=2, sticky="ew", padx=(0,6), pady=8)
+    chat_bar.columnconfigure(2, weight=1)
+
+    def _mc_send(_event=None):
+        cmd = cmd_entry.get().strip()
+        if not cmd: return
+        target = target_var.get()
+        targets = list(range(MAX_SLOTS)) if target == "All Servers"                   else [int(target.split()[-1]) - 1]
+        for s in targets:
+            stdin = slots[s]["stdin"]
+            if stdin:
+                try:
+                    stdin.write(cmd + "\n"); stdin.flush()
+                    app.after(0, _mc_log, s, f">> {cmd}")
+                except Exception as ex:
+                    app.after(0, _mc_log, s, f"[error] {ex}")
+            else:
+                app.after(0, _mc_log, s,
+                          f"[Server {s+1} not running — command not sent]")
+        cmd_entry.delete(0, "end")
+
+    cmd_entry.bind("<Return>", _mc_send)
+    ctk.CTkButton(chat_bar, text="Send", width=70, height=30,
+                  font=ctk.CTkFont(size=11),
+                  fg_color=T["sync"], hover_color=T["sync"],
+                  text_color="#000", command=_mc_send
+                  ).grid(row=0, column=3, padx=(0,10), pady=8)
+
+# ── Settings tab ─────────────────────────────────────────def build_settings_tab(parent):
     scroll = ctk.CTkScrollableFrame(parent, fg_color="transparent")
     scroll.pack(fill="both", expand=True, padx=20, pady=12)
 
