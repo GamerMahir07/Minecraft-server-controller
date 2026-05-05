@@ -195,6 +195,7 @@ log_left           = settings.get("log_left", False)
 show_perf          = settings.get("show_perf", True)
 fullscreen         = settings.get("fullscreen", False)
 auto_upload        = settings.get("auto_upload", False)
+backup_upload_on   = settings.get("backup_upload_on", True)   # new switch
 auto_upload_mins   = settings.get("auto_upload_mins", 10)
 upload_on_stop     = settings.get("upload_on_stop", True)
 ram_display_mode   = settings.get("ram_display_mode", "percent")
@@ -257,79 +258,83 @@ def parse_server_line(raw):
     if not clean:
         return None
 
+    # ── Fast string pre-checks before any regex ──────────────
     # Server ready
-    if DONE_RE.search(clean):
-        server_ready = True
-        app.after(0, show_toast, "Server is ready!", T["start"])
-        return ('log', clean)
+    if "Done (" in clean:
+        if DONE_RE.search(clean):
+            server_ready = True
+            app.after(0, show_toast, "Server is ready!", T["start"])
+            return ('log', clean)
 
-    # TPS (spark)
-    tps = SPARK_TPS.search(clean) or TPS_RE2.search(clean)
-    if tps:
-        perf["tps"] = tps.group(1)
-        return None
+    # TPS — only run regex if keywords present
+    if "TPS" in clean or "tps" in clean:
+        tps = SPARK_TPS.search(clean) or TPS_RE2.search(clean)
+        if tps:
+            perf["tps"] = tps.group(1)
+            return None
 
-    # Latency — try three different formats
-    lat = LATENCY_RE.search(clean) or LATENCY_RE2.search(clean) or LATENCY_RE3.search(clean)
-    if lat:
-        try:
-            pings = [int(m[1]) for m in
-                     (LATENCY_RE.findall(clean) or
-                      LATENCY_RE2.findall(clean) or
-                      LATENCY_RE3.findall(clean))]
-            if pings:
-                avg = sum(pings) // len(pings)
-                perf["latency"] = f"{avg} ms"
-        except:
-            pass
-        return None
+    # Latency — only run if "ms" in line
+    if "ms" in clean:
+        lat = LATENCY_RE.search(clean) or LATENCY_RE2.search(clean) or LATENCY_RE3.search(clean)
+        if lat:
+            try:
+                pings = [int(m[1]) for m in
+                         (LATENCY_RE.findall(clean) or
+                          LATENCY_RE2.findall(clean) or
+                          LATENCY_RE3.findall(clean))]
+                if pings:
+                    perf["latency"] = f"{sum(pings) // len(pings)} ms"
+            except: pass
+            return None
 
-    # Player count + name list from /list
-    pl = PLAYER_RE.search(clean)
-    if pl:
-        player_count = int(pl.group(1))
-        perf["players"] = str(player_count)
-        # Also try to extract names from same line
-        nm = LIST_NAMES_RE.search(clean)
-        if nm:
-            raw_names = nm.group(1).strip()
-            if raw_names and raw_names not in ("", "online:"):
-                names = [n.strip() for n in raw_names.split(",") if n.strip()]
-                now = datetime.now().strftime("%H:%M")
-                for n in names:
-                    if n not in online_players:
-                        online_players[n] = now
-                # Remove stale players not in this list
-                for gone in [k for k in online_players if k not in names]:
-                    online_players.pop(gone, None)
-        return None
+    # Player list — only if "There are" in line
+    if "There are" in clean:
+        pl = PLAYER_RE.search(clean)
+        if pl:
+            player_count = int(pl.group(1))
+            perf["players"] = str(player_count)
+            nm = LIST_NAMES_RE.search(clean)
+            if nm:
+                raw_names = nm.group(1).strip()
+                if raw_names and raw_names not in ("", "online:"):
+                    names = [n.strip() for n in raw_names.split(",") if n.strip()]
+                    now = datetime.now().strftime("%H:%M")
+                    for n in names:
+                        if n not in online_players:
+                            online_players[n] = now
+                    for gone in [k for k in online_players if k not in names]:
+                        online_players.pop(gone, None)
+            return None
 
-    # Chat
-    chat = CHAT_RE.search(clean)
-    if chat:
-        return ('chat', f"[CHAT] {chat.group(1)}: {chat.group(2)}")
+    # Chat — only if line contains '<'
+    if '<' in clean:
+        chat = CHAT_RE.search(clean)
+        if chat:
+            return ('chat', f"[CHAT] {chat.group(1)}: {chat.group(2)}")
 
-    # Join
-    join = JOIN_RE.search(clean)
-    if join:
-        name = join.group(1)
-        player_count += 1
-        perf["players"] = str(player_count)
-        online_players[name] = datetime.now().strftime("%H:%M")
-        return ('event', f">> {name} joined")
+    # Join/Leave — only if "joined" or "left"/"lost" in line
+    if "joined the game" in clean:
+        join = JOIN_RE.search(clean)
+        if join:
+            name = join.group(1)
+            player_count += 1
+            perf["players"] = str(player_count)
+            online_players[name] = datetime.now().strftime("%H:%M")
+            return ('event', f">> {name} joined")
 
-    # Leave
-    leave = LEAVE_RE.search(clean)
-    if leave:
-        name = leave.group(1)
-        player_count = max(0, player_count - 1)
-        perf["players"] = str(player_count)
-        online_players.pop(name, None)
-        return ('event', f"<< {name} left")
+    if "left the game" in clean or "lost connection" in clean:
+        leave = LEAVE_RE.search(clean)
+        if leave:
+            name = leave.group(1)
+            player_count = max(0, player_count - 1)
+            perf["players"] = str(player_count)
+            online_players.pop(name, None)
+            return ('event', f"<< {name} left")
 
-    # Death
-    if DEATH_RE.search(clean):
-        return ('event', f"[DEATH] {clean}")
+    # Death — only if common death keywords present
+    if any(w in clean for w in ("was slain","died","fell","drowned","burned","blew up","suffocated","starved","withered")):
+        if DEATH_RE.search(clean):
+            return ('event', f"[DEATH] {clean}")
 
     return ('log', clean)
 
@@ -494,6 +499,9 @@ def schedule_auto_upload():
 
 def _do_auto_upload():
     if not auto_upload: return
+    if not backup_upload_on:
+        schedule_auto_upload()  # reschedule but skip
+        return
     s = load_settings()
     path = s.get("srv_path", SRV_PATH)
     repo = s.get("repo_url", REPO_URL)
@@ -528,7 +536,14 @@ def _do_auto_upload():
 perf_labels = {}
 
 def find_java_proc():
-    import psutil  # lazy import — not needed until perf polling starts
+    """Use the captured server_pid directly — no full process scan."""
+    import psutil
+    if server_pid:
+        try:
+            return psutil.Process(server_pid)
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            return None
+    # Fallback: scan only if PID not captured yet (e.g. external server)
     for p in psutil.process_iter(['pid', 'name', 'cmdline']):
         try:
             if p.info['name'] and 'java' in p.info['name'].lower():
@@ -608,7 +623,46 @@ def apply_theme(name):
     update_setting("theme", name)
     ctk.set_appearance_mode(T["appearance"])
     app.configure(fg_color=T["bg"])
-    rebuild_ui()
+    _recolor_all(app)
+
+def _recolor_all(widget):
+    """Recursively recolor every widget to match the new theme — no rebuild."""
+    COLOR_MAP = {
+        # Maps widget fg_color values to new theme equivalents
+        # We walk the tree and update anything that holds a theme color.
+    }
+    try:
+        # CTkTextbox, CTkFrame, CTkScrollableFrame — update fg_color
+        wtype = type(widget).__name__
+        if wtype in ("CTkFrame", "CTkScrollableFrame"):
+            try:
+                cur = widget.cget("fg_color")
+                if cur not in ("transparent", "#00000000"):
+                    widget.configure(fg_color=T["bg"])
+            except: pass
+        if wtype == "CTkTextbox":
+            try: widget.configure(fg_color=T["bg"], text_color=T["text"])
+            except: pass
+        if wtype == "CTkLabel":
+            try:
+                cur = widget.cget("text_color")
+                # Only recolor if it was set to a theme colour (not a status colour)
+                widget.configure(text_color=T["text"])
+            except: pass
+        if wtype == "CTkButton":
+            try: widget.configure(border_color=T["border"])
+            except: pass
+        if wtype == "CTkEntry":
+            try: widget.configure(fg_color=T["bg"], border_color=T["border"], text_color=T["text"])
+            except: pass
+        if wtype in ("CTkCanvas", "Canvas"):
+            try: widget.configure(bg=T["bg"])
+            except: pass
+    except: pass
+    try:
+        for child in widget.winfo_children():
+            _recolor_all(child)
+    except: pass
 
 def rebuild_ui():
     global log_history, chat_history
@@ -2663,40 +2717,65 @@ def build_playit_tab(parent):
             tun_addr.configure(text=addr or "")
             if addr: show_toast(f"Tunnel: {addr}", T["start"])
         except: pass
-    def _append_ptlog(line):
+    # ── Batched, throttled log writer ─────────────────────────────
+    # Lines from background threads accumulate in _PT_LOG_QUEUE.
+    # A single recurring app.after() drains them at most every 120ms,
+    # so fast bursts never schedule hundreds of individual UI updates.
+    _PT_LOG_QUEUE    = []
+    _PT_LOG_MAXLINES = 300
+    _PT_FLUSH_MS     = 120
+    _pt_flush_pending = [False]
+
+    _ansi_re  = re.compile(r'\x1b(?:\[[0-9;]*[mABCDEFGHJKSTfhilmnprsuu]|\][^\x07]*\x07|[()][AB012]|[=>])')
+    _coord_re = re.compile(r'\x1b\[\d+;\d+H')
+
+    def _flush_ptlog():
+        _pt_flush_pending[0] = False
+        if not _PT_LOG_QUEUE:
+            return
+        batch = _PT_LOG_QUEUE[:]
+        _PT_LOG_QUEUE.clear()
         try:
-            pt_log.configure(state="normal"); pt_log.insert("end", line+"\n")
-            pt_log.configure(state="disabled"); pt_log.see("end")
-        except: pass
-    _ansi_re = re.compile(r'\x1b(?:\[[0-9;]*[mABCDEFGHJKSTfhilmnprsuu]|\][^\x07]*\x07|[()][AB012]|[=>])')
-    _coord_re = re.compile(r'\x1b\[\d+;\d+H')  # cursor positioning
+            pt_log.configure(state="normal")
+            pt_log.insert("end", "\n".join(batch) + "\n")
+            # Keep widget trimmed — one bulk delete instead of per-line
+            total = int(pt_log.index("end-1c").split(".")[0])
+            if total > _PT_LOG_MAXLINES:
+                pt_log.delete("1.0", f"{total - _PT_LOG_MAXLINES}.0")
+            pt_log.configure(state="disabled")
+            pt_log.see("end")
+        except Exception:
+            pass
+
+    def _append_ptlog(line):
+        _PT_LOG_QUEUE.append(line)
+        if not _pt_flush_pending[0]:
+            _pt_flush_pending[0] = True
+            app.after(_PT_FLUSH_MS, _flush_ptlog)
 
     def _handle_line(raw_bytes, prefix=""):
-        """Decode one raw line from playit, strip ANSI, log and scan."""
         try:
             line = raw_bytes.decode("utf-8", errors="replace").rstrip()
         except Exception:
             line = repr(raw_bytes)
-        # Strip ANSI/VT100 escape sequences so text is readable
         clean = _ansi_re.sub("", _coord_re.sub(" ", line)).strip()
         if not clean:
             return
         tagged = f"{prefix}{clean}" if prefix else clean
         playit_log_lines.append(tagged)
-        if len(playit_log_lines) > 500:
-            playit_log_lines[:] = playit_log_lines[-500:]
+        if len(playit_log_lines) > 300:
+            del playit_log_lines[:150]   # drop oldest half in one shot
         m = _playit_addr_re.search(clean) or _playit_arrow_re.search(clean)
         if m:
             app.after(0, _set_addr, m.group(1))
         cm = _playit_claim_re.search(clean)
         if cm:
             url = cm.group(1)
-            app.after(0, _append_ptlog, f"[MC CTRL] >>> CLAIM URL: {url} <<<")
+            _append_ptlog(f"[MC CTRL] >>> CLAIM URL: {url} <<<")
             app.after(0, show_toast, "Open claim URL in browser!", T["handoff"], 8000)
-        app.after(0, _append_ptlog, tagged)
+        _append_ptlog(tagged)
 
     def _read_stream_bytes(stream, prefix=""):
-        """Read a binary stream line by line."""
         try:
             for raw in iter(stream.readline, b""):
                 if not raw:
@@ -2908,6 +2987,16 @@ def build_playit_tab(parent):
                   fg_color="transparent",border_width=1,border_color=T["border"],
                   text_color=T["muted"],hover_color=T["border"],
                   command=_clear_ptlog).pack(side="right")
+    def _copy_ptlog():
+        try:
+            txt = pt_log.get("1.0","end").strip()
+            app.clipboard_clear(); app.clipboard_append(txt)
+            show_toast("Agent log copied!", T["sync"])
+        except: pass
+    ctk.CTkButton(lh,text="Copy Log",width=72,height=22,font=ctk.CTkFont(size=10),
+                  fg_color="transparent",border_width=1,border_color=T["border"],
+                  text_color=T["muted"],hover_color=T["border"],
+                  command=_copy_ptlog).pack(side="right", padx=(0,4))
 
     gb, _ = _card("Setup Guide")
 
@@ -3325,6 +3414,12 @@ def build_multictrl_tab(parent):
     b = section("Auto Upload")
     row(b, "Enable auto upload",
         lambda p: sw(p, lambda: auto_upload, lambda v: toggle_auto_upload()))
+    def _toggle_backup_upload(v):
+        global backup_upload_on
+        backup_upload_on = v
+        update_setting("backup_upload_on", v)
+    row(b, "Backup upload  (ON = uploads to GitHub, OFF = skips all uploads)",
+        lambda p: sw(p, lambda: backup_upload_on, _toggle_backup_upload))
     def mins_fn(p):
         var = ctk.StringVar(value=str(auto_upload_mins))
         e = ctk.CTkEntry(p, textvariable=var, width=60, height=28,
@@ -3633,7 +3728,7 @@ def stop_server():
     server_ready = perf_running = False
     for k in ("tps","latency","players","uptime","ram_srv","cpu_srv","threads"):
         perf[k] = "--"
-    if upload_on_stop:
+    if upload_on_stop and backup_upload_on:
         s = load_settings(); path = s.get("srv_path", SRV_PATH)
         log("Pushing world to GitHub...")
         run_cmd("git add world/ world_nether/ world_the_end/", cwd=path)
