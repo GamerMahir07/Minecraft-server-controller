@@ -2,7 +2,6 @@ import time
 import shutil
 import tkinter as tk
 import tkinter.filedialog as _tk_fd
-# matplotlib removed (unused) — was causing slow startup
 import customtkinter as ctk
 import subprocess
 import threading
@@ -30,7 +29,6 @@ playit_log_lines = []
 _playit_addr_re  = re.compile(
     r'((?:[\w\-]+\.)+(?:ply\.gg|playit\.gg|joinmc\.link|plymc\.link|mc\.gg)(?::\d+)?)',
     re.IGNORECASE)
-# Also match the "hostname => ip:port" arrow format playit uses in its TUI
 _playit_arrow_re = re.compile(
     r'([\w][\w\-.]+\.[a-z]{2,})\s*=>\s*[\d.]+:\d+', re.IGNORECASE)
 _playit_claim_re = re.compile(
@@ -63,7 +61,7 @@ THEMES = {
     "Sunset Dark":               {"appearance":"dark", "bg":"#1a0a00","card":"#2a1200","border":"#7c3a10","text":"#ffe4c4","muted":"#8a5030","start":"#4ade80","stop":"#f87171","sync":"#c084fc","handoff":"#fb923c"},
     "Sunset Light":              {"appearance":"light","bg":"#fff7ed","card":"#ffffff","border":"#fed7aa","text":"#1c0a00","muted":"#9a6030","start":"#16a34a","stop":"#e11d48","sync":"#7c3aed","handoff":"#ea580c"},
     # ── Obsidian ──────────────────────────────────────────
-    "Obsidian Dark":             {"appearance":"dark", "bg":"#080808","card":"#101010","border":"#1e1e2e","text":"#cdd6f4","muted":"#45475a","start":"#a6e3a1","stop":"#f38ba8","sync":"#89b4fa","handoff":"#fab387"},
+    "Obsidian Dark":             {"appearance":"dark", "bg":"#020202","card":"#070710","border":"#13132a","text":"#cdd6f4","muted":"#3a3a52","start":"#a6e3a1","stop":"#f38ba8","sync":"#89b4fa","handoff":"#fab387"},
     "Obsidian Light":            {"appearance":"light","bg":"#f0f0f8","card":"#ffffff","border":"#c5c5e0","text":"#1e1e2e","muted":"#6e7090","start":"#40a02b","stop":"#d20f39","sync":"#1e66f5","handoff":"#e49320"},
     # ── Ender Night ───────────────────────────────────────
     "Ender Night Dark":          {"appearance":"dark", "bg":"#000000","card":"#0d0010","border":"#3b0060","text":"#e8b4ff","muted":"#6a2a8a","start":"#bf7fff","stop":"#ff5f87","sync":"#d68fff","handoff":"#ffb347"},
@@ -144,7 +142,7 @@ THEMES = {
 
 SETTINGS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "settings.json")
 
-# ── Settings helpers (cached — avoids disk read on every widget event) ────────
+# ── Settings helpers ──────────────────────────────────────
 _settings_cache = None
 _settings_lock  = threading.Lock()
 
@@ -176,7 +174,6 @@ def update_setting(key, value):
         if _settings_cache is None:
             _settings_cache = {}
         _settings_cache[key] = value
-    # Write in a background thread so the UI never blocks on disk I/O
     def _write():
         try:
             with _settings_lock:
@@ -195,23 +192,29 @@ log_left           = settings.get("log_left", False)
 show_perf          = settings.get("show_perf", True)
 fullscreen         = settings.get("fullscreen", False)
 auto_upload        = settings.get("auto_upload", False)
-backup_upload_on   = settings.get("backup_upload_on", True)   # new switch
+backup_upload_on   = settings.get("backup_upload_on", True)
 auto_upload_mins   = settings.get("auto_upload_mins", 10)
 upload_on_stop     = settings.get("upload_on_stop", True)
 ram_display_mode   = settings.get("ram_display_mode", "percent")
-# Migrate old theme names that were renamed
+
+# ── Restore saved custom themes ───────────────────────────
+def _restore_custom_themes():
+    customs = settings.get("custom_themes", {})
+    for name, td in customs.items():
+        if name not in THEMES:
+            THEMES[name] = td
+_restore_custom_themes()
+
 _THEME_ALIASES = {
-    "Obsidian":          "Obsidian Dark",
-    "Midnight Blue":     "Midnight Blue Dark",
-    "Creeper Green":     "Creeper Green Dark",
-    "Nether Red":        "Nether Red Dark",
-    "Ender Night":       "Ender Night Dark",
-    "Ocean Light":       "Ocean Light",
-    "Ocean Dark":        "Ocean Dark",
+    "Obsidian":      "Obsidian Dark",
+    "Midnight Blue": "Midnight Blue Dark",
+    "Creeper Green": "Creeper Green Dark",
+    "Nether Red":    "Nether Red Dark",
+    "Ender Night":   "Ender Night Dark",
 }
 if current_theme_name not in THEMES:
     current_theme_name = _THEME_ALIASES.get(current_theme_name, "Dark (Default)")
-T                  = THEMES[current_theme_name]
+T = THEMES[current_theme_name]
 
 ctk.set_appearance_mode(T["appearance"])
 ctk.set_default_color_theme("dark-blue")
@@ -222,11 +225,11 @@ server_pid        = None
 perf_running      = False
 server_ready      = False
 player_count      = 0
-online_players    = {}   # name -> join_time string
+online_players    = {}
 auto_upload_timer = None
 log_history       = ""
 chat_history      = ""
-_players_refresh_id = None   # after() id for live players panel
+_players_refresh_id = None
 
 perf = {
     "ram_used":"--","ram_pct":"--","ram_srv":"--",
@@ -236,44 +239,39 @@ perf = {
 }
 server_start_time = None
 
+# ── Disabled addons set ───────────────────────────────────
+_disabled_addons = set(settings.get("disabled_addons", []))
+
 # ── Regex ─────────────────────────────────────────────────
-CHAT_RE         = re.compile(r'<([^>]+)>\s*(.+)')
-JOIN_RE         = re.compile(r'^(\w+) joined the game', re.IGNORECASE)
-LEAVE_RE        = re.compile(r'^(\w+) (?:lost connection|left the game)', re.IGNORECASE)
-DEATH_RE        = re.compile(r'(\w+) (was |died|fell|drowned|burned|blew|got |hit |walked|withered|starved|suffocated)', re.IGNORECASE)
-STRIP_RE        = re.compile(r'^\[[\d:]+\]\s*\[.*?(?:INFO|WARN|ERROR).*?\]:\s*', re.IGNORECASE)
-DONE_RE         = re.compile(r'Done \([\d.]+s\)!', re.IGNORECASE)
-SPARK_TPS       = re.compile(r'TPS from last 1m[^:]*:\s*([\d.]+)', re.IGNORECASE)
-TPS_RE2         = re.compile(r'Current TPS[:\s]+([\d.]+)', re.IGNORECASE)
-PLAYER_RE       = re.compile(r'There are (\d+) of a max of \d+ players', re.IGNORECASE)
-LIST_NAMES_RE   = re.compile(r'There are \d+[^:]*:\s*(.+)', re.IGNORECASE)
-# Multiple latency formats: "Steve has 42ms", "Steve has a ping of 42ms", "Steve (42ms)"
-LATENCY_RE      = re.compile(r'(\w+)\s+has\s+(?:a\s+ping\s+of\s+)?(\d+)\s*ms', re.IGNORECASE)
-LATENCY_RE2     = re.compile(r'(\w+)\s*\((\d+)\s*ms\)', re.IGNORECASE)
-LATENCY_RE3     = re.compile(r'ping\[(\w+)\]\s*=\s*(\d+)', re.IGNORECASE)
+CHAT_RE       = re.compile(r'<([^>]+)>\s*(.+)')
+JOIN_RE       = re.compile(r'^(\w+) joined the game', re.IGNORECASE)
+LEAVE_RE      = re.compile(r'^(\w+) (?:lost connection|left the game)', re.IGNORECASE)
+DEATH_RE      = re.compile(r'(\w+) (was |died|fell|drowned|burned|blew|got |hit |walked|withered|starved|suffocated)', re.IGNORECASE)
+STRIP_RE      = re.compile(r'^\[[\d:]+\]\s*\[.*?(?:INFO|WARN|ERROR).*?\]:\s*', re.IGNORECASE)
+DONE_RE       = re.compile(r'Done \([\d.]+s\)!', re.IGNORECASE)
+SPARK_TPS     = re.compile(r'TPS from last 1m[^:]*:\s*([\d.]+)', re.IGNORECASE)
+TPS_RE2       = re.compile(r'Current TPS[:\s]+([\d.]+)', re.IGNORECASE)
+PLAYER_RE     = re.compile(r'There are (\d+) of a max of \d+ players', re.IGNORECASE)
+LIST_NAMES_RE = re.compile(r'There are \d+[^:]*:\s*(.+)', re.IGNORECASE)
+LATENCY_RE    = re.compile(r'(\w+)\s+has\s+(?:a\s+ping\s+of\s+)?(\d+)\s*ms', re.IGNORECASE)
+LATENCY_RE2   = re.compile(r'(\w+)\s*\((\d+)\s*ms\)', re.IGNORECASE)
+LATENCY_RE3   = re.compile(r'ping\[(\w+)\]\s*=\s*(\d+)', re.IGNORECASE)
 
 def parse_server_line(raw):
     global player_count, server_ready
     clean = STRIP_RE.sub('', raw).strip()
     if not clean:
         return None
-
-    # ── Fast string pre-checks before any regex ──────────────
-    # Server ready
     if "Done (" in clean:
         if DONE_RE.search(clean):
             server_ready = True
             app.after(0, show_toast, "Server is ready!", T["start"])
             return ('log', clean)
-
-    # TPS — only run regex if keywords present
     if "TPS" in clean or "tps" in clean:
         tps = SPARK_TPS.search(clean) or TPS_RE2.search(clean)
         if tps:
             perf["tps"] = tps.group(1)
             return None
-
-    # Latency — only run if "ms" in line
     if "ms" in clean:
         lat = LATENCY_RE.search(clean) or LATENCY_RE2.search(clean) or LATENCY_RE3.search(clean)
         if lat:
@@ -286,8 +284,6 @@ def parse_server_line(raw):
                     perf["latency"] = f"{sum(pings) // len(pings)} ms"
             except: pass
             return None
-
-    # Player list — only if "There are" in line
     if "There are" in clean:
         pl = PLAYER_RE.search(clean)
         if pl:
@@ -305,14 +301,10 @@ def parse_server_line(raw):
                     for gone in [k for k in online_players if k not in names]:
                         online_players.pop(gone, None)
             return None
-
-    # Chat — only if line contains '<'
     if '<' in clean:
         chat = CHAT_RE.search(clean)
         if chat:
             return ('chat', f"[CHAT] {chat.group(1)}: {chat.group(2)}")
-
-    # Join/Leave — only if "joined" or "left"/"lost" in line
     if "joined the game" in clean:
         join = JOIN_RE.search(clean)
         if join:
@@ -321,7 +313,6 @@ def parse_server_line(raw):
             perf["players"] = str(player_count)
             online_players[name] = datetime.now().strftime("%H:%M")
             return ('event', f">> {name} joined")
-
     if "left the game" in clean or "lost connection" in clean:
         leave = LEAVE_RE.search(clean)
         if leave:
@@ -330,15 +321,11 @@ def parse_server_line(raw):
             perf["players"] = str(player_count)
             online_players.pop(name, None)
             return ('event', f"<< {name} left")
-
-    # Death — only if common death keywords present
     if any(w in clean for w in ("was slain","died","fell","drowned","burned","blew up","suffocated","starved","withered")):
         if DEATH_RE.search(clean):
             return ('event', f"[DEATH] {clean}")
-
     return ('log', clean)
 
-# ── Pre-warm settings cache in background ─────────────────
 threading.Thread(target=load_settings, daemon=True).start()
 
 # ── App window ────────────────────────────────────────────
@@ -388,11 +375,20 @@ def set_status(txt, color):
     except:
         pass
 
+# ── Command history ───────────────────────────────────────
+_cmd_history     = []   # list of sent commands
+_cmd_history_idx = [-1] # current position (-1 = not browsing)
+
 def send_command():
     cmd = cmd_entry.get().strip()
     if not cmd:
         return
     cmd_entry.delete(0, "end")
+    _cmd_history_idx[0] = -1          # reset browse position
+    if not _cmd_history or _cmd_history[-1] != cmd:
+        _cmd_history.append(cmd)      # deduplicate consecutive identical commands
+    if len(_cmd_history) > 200:
+        del _cmd_history[0]
     send_server_cmd(cmd)
 
 def send_server_cmd(cmd):
@@ -500,8 +496,7 @@ def schedule_auto_upload():
 def _do_auto_upload():
     if not auto_upload: return
     if not backup_upload_on:
-        schedule_auto_upload()  # reschedule but skip
-        return
+        schedule_auto_upload(); return
     s = load_settings()
     path = s.get("srv_path", SRV_PATH)
     repo = s.get("repo_url", REPO_URL)
@@ -536,14 +531,12 @@ def _do_auto_upload():
 perf_labels = {}
 
 def find_java_proc():
-    """Use the captured server_pid directly — no full process scan."""
     import psutil
     if server_pid:
         try:
             return psutil.Process(server_pid)
         except (psutil.NoSuchProcess, psutil.AccessDenied):
             return None
-    # Fallback: scan only if PID not captured yet (e.g. external server)
     for p in psutil.process_iter(['pid', 'name', 'cmdline']):
         try:
             if p.info['name'] and 'java' in p.info['name'].lower():
@@ -553,7 +546,7 @@ def find_java_proc():
     return None
 
 def perf_loop():
-    import psutil  # lazy
+    import psutil
     global perf_running
     perf_running = True
     java_proc = None; tick = 0
@@ -587,7 +580,6 @@ def perf_loop():
                 try:
                     if tick % 5  == 0: server_stdin.write("tps\n");  server_stdin.flush()
                     if tick % 10 == 0: server_stdin.write("list\n"); server_stdin.flush()
-                    # Spark ping gives per-player latency
                     if tick % 30 == 0 and online_players:
                         server_stdin.write("spark ping\n"); server_stdin.flush()
                 except: pass
@@ -616,7 +608,11 @@ def update_perf_labels():
                 lbl.configure(text=val, text_color=T["text"])
         except: pass
 
-# ── Theme / layout ────────────────────────────────────────
+# ── Theme ─────────────────────────────────────────────────
+# Holds a reference to the top-bar theme button so apply_theme
+# can update its label without a fragile globals() monkey-patch.
+_theme_btn_refs = [None]
+
 def apply_theme(name):
     global T, current_theme_name
     current_theme_name = name; T = THEMES[name]
@@ -624,15 +620,14 @@ def apply_theme(name):
     ctk.set_appearance_mode(T["appearance"])
     app.configure(fg_color=T["bg"])
     _recolor_all(app)
+    try:
+        if _theme_btn_refs[0] is not None:
+            _theme_btn_refs[0].configure(text=f"🎨  {name}")
+    except Exception:
+        pass
 
 def _recolor_all(widget):
-    """Recursively recolor every widget to match the new theme — no rebuild."""
-    COLOR_MAP = {
-        # Maps widget fg_color values to new theme equivalents
-        # We walk the tree and update anything that holds a theme color.
-    }
     try:
-        # CTkTextbox, CTkFrame, CTkScrollableFrame — update fg_color
         wtype = type(widget).__name__
         if wtype in ("CTkFrame", "CTkScrollableFrame"):
             try:
@@ -644,10 +639,7 @@ def _recolor_all(widget):
             try: widget.configure(fg_color=T["bg"], text_color=T["text"])
             except: pass
         if wtype == "CTkLabel":
-            try:
-                cur = widget.cget("text_color")
-                # Only recolor if it was set to a theme colour (not a status colour)
-                widget.configure(text_color=T["text"])
+            try: widget.configure(text_color=T["text"])
             except: pass
         if wtype == "CTkButton":
             try: widget.configure(border_color=T["border"])
@@ -672,25 +664,6 @@ def rebuild_ui():
     except: pass
     for w in app.winfo_children(): w.destroy()
     build_ui()
-    # Restore playit log — if the playit tab was already built, repopulate it
-    if playit_log_lines:
-        def _restore_ptlog():
-            try:
-                from itertools import islice
-                # find pt_log widget by scanning all Text widgets in the app
-                def _find_text(w):
-                    results = []
-                    for child in w.winfo_children():
-                        if isinstance(child, ctk.CTkTextbox):
-                            results.append(child)
-                        results.extend(_find_text(child))
-                    return results
-                # Just trigger the playit tab to build, then repopulate
-                # The playit_log_lines global is preserved — _append_ptlog uses it
-                pass  # log lines are re-added when tab is first opened via _built_tabs
-            except Exception:
-                pass
-        app.after(100, _restore_ptlog)
 
 def swap_layout():
     global log_left
@@ -723,7 +696,7 @@ def toggle_chat():
     else:
         chat_box.pack_forget(); chat_box.configure(height=0)
 
-# ── First-Launch Onboarding Dialog ────────────────────────
+# ── First-Launch Dialog ───────────────────────────────────
 def show_first_launch_dialog():
     global auto_upload, upload_on_stop, current_theme_name, T
 
@@ -827,9 +800,8 @@ def show_first_launch_dialog():
                   fg_color="#22c55e", hover_color="#16a34a", text_color="#000000",
                   command=_confirm).pack(padx=20, pady=(0,24), fill="x")
 
-# ── Smooth scrollable frame (replaces CTkScrollableFrame) ─
+# ── Smooth scrollable frame ───────────────────────────────
 def make_scroll_frame(parent, **kwargs):
-    """Canvas scroll area — atomic redraw, no flicker on fast scroll."""
     fg = kwargs.pop("fg_color", "transparent")
     bg = T["bg"] if fg == "transparent" else (fg[1] if isinstance(fg, (list,tuple)) else fg)
 
@@ -878,7 +850,6 @@ def build_ui():
                  font=ctk.CTkFont(size=16, weight="bold"),
                  text_color=T["text"]).pack(side="left", padx=16, pady=10)
 
-    # Theme picker button → opens search/filter window
     def open_theme_picker():
         win = ctk.CTkToplevel(app)
         win.title("Theme Search")
@@ -893,11 +864,8 @@ def build_ui():
             win.geometry(f"780x620+{ax}+{ay}")
         except: pass
 
-        # ── colour-role filter state ───────────────────────
-        # Each role has a list of hue-bucket buttons the user can toggle
-        # Hue buckets: red orange yellow green cyan blue purple pink white grey black
         HUE_LABELS = ["red","orange","yellow","green","cyan","blue","purple","pink","white","grey","black"]
-        HUE_RANGES = {          # hue in [0,360), s/v in [0,1]
+        HUE_RANGES = {
             "red":    (lambda h,s,v: (h<20 or h>=340) and s>0.35 and v>0.15),
             "orange": (lambda h,s,v: 20<=h<45          and s>0.35 and v>0.15),
             "yellow": (lambda h,s,v: 45<=h<70          and s>0.35 and v>0.3),
@@ -920,7 +888,6 @@ def build_ui():
             h,s,v = colorsys.rgb_to_hsv(r,g,b)
             return h*360, s, v
 
-        # Pre-compute HSV for every theme colour role once
         _hsv_cache = {}
         for _tn, _td in THEMES.items():
             for _role in ROLE_LABELS:
@@ -932,24 +899,19 @@ def build_ui():
             h,s,v = _hsv_cache.get((theme_name,role),(0,0,0))
             return HUE_RANGES[bucket](h,s,v)
 
-        # Debounce timer
         _rebuild_timer = [None]
-
-        # filters[role] = set of active hue buckets (empty = any)
         filters = {r: set() for r in ROLE_LABELS}
-        mode_filter = tk.StringVar(value="any")   # "any" | "dark" | "light"
+        mode_filter = tk.StringVar(value="any")
         text_filter = tk.StringVar(value="")
 
-        # ── header ────────────────────────────────────────
         hdr = ctk.CTkFrame(win, fg_color=T["card"], corner_radius=0)
         hdr.pack(fill="x")
         ctk.CTkLabel(hdr, text="Theme Search",
                      font=ctk.CTkFont(size=14, weight="bold"),
                      text_color=T["text"]).pack(side="left", padx=14, pady=10)
-        ctk.CTkLabel(hdr, text=f"64 themes",
+        ctk.CTkLabel(hdr, text=f"{len(THEMES)} themes",
                      font=ctk.CTkFont(size=11), text_color=T["muted"]).pack(side="left")
 
-        # mode toggle
         mr = ctk.CTkFrame(hdr, fg_color="transparent"); mr.pack(side="right", padx=12, pady=8)
         ctk.CTkLabel(mr, text="Mode:", font=ctk.CTkFont(size=11),
                      text_color=T["muted"]).pack(side="left", padx=(0,6))
@@ -960,7 +922,6 @@ def build_ui():
                                command=lambda: win.after(0, _rebuild_grid)
                                ).pack(side="left", padx=(0,8))
 
-        # search box
         sr = ctk.CTkFrame(win, fg_color=T["bg"]); sr.pack(fill="x", padx=14, pady=(8,0))
         ctk.CTkLabel(sr, text="🔍  Name:", font=ctk.CTkFont(size=11),
                      text_color=T["muted"]).pack(side="left")
@@ -974,7 +935,6 @@ def build_ui():
             _rebuild_timer[0] = win.after(120, _rebuild_grid)
         text_filter.trace_add("write", _debounced_rebuild)
 
-        # colour filter rows — collapsed by default, shown when user clicks "Colour Filters"
         cf_visible = [False]
         cf_toggle_btn = ctk.CTkButton(win, text="▶  Colour Filters", height=26, width=150,
                                       font=ctk.CTkFont(size=11), corner_radius=6,
@@ -984,7 +944,6 @@ def build_ui():
         cf_toggle_btn.pack(anchor="w", padx=14, pady=(4,0))
 
         cf = ctk.CTkFrame(win, fg_color=T["bg"])
-        # NOT packed yet — shown on demand
 
         def _toggle_cf():
             cf_visible[0] = not cf_visible[0]
@@ -995,17 +954,14 @@ def build_ui():
                 cf.pack_forget()
                 cf_toggle_btn.configure(text="▶  Colour Filters")
         cf_toggle_btn.configure(command=_toggle_cf)
-
-        # Also open colour filters when search entry is focused
         se.bind("<FocusIn>", lambda e: (_toggle_cf() if not cf_visible[0] else None))
 
-        # hue swatch colours for buttons
         HUE_SWATCHES = {
             "red":"#ef4444","orange":"#f97316","yellow":"#eab308","green":"#22c55e",
             "cyan":"#06b6d4","blue":"#3b82f6","purple":"#8b5cf6","pink":"#ec4899",
             "white":"#f5f5f5","grey":"#888888","black":"#222222",
         }
-        hue_btn_refs = {}  # (role, hue) -> button widget
+        hue_btn_refs = {}
 
         def _toggle_hue(role, hue):
             if hue in filters[role]: filters[role].discard(hue)
@@ -1055,33 +1011,31 @@ def build_ui():
 
         ctk.CTkFrame(win, height=1, fg_color=T["border"]).pack(fill="x", padx=14, pady=(6,0))
 
-        # ── scrollable grid ───────────────────────────────
         grid_outer = ctk.CTkScrollableFrame(win, fg_color="transparent")
         grid_outer.pack(fill="both", expand=True, padx=10, pady=6)
 
         _card_widgets = []
 
         def _theme_matches(name, tdata):
-            # mode
             m = mode_filter.get()
             if m != "any" and tdata["appearance"] != m: return False
-            # text search
             q = text_filter.get().strip().lower()
             if q and q not in name.lower(): return False
-            # colour filters
             for role in ROLE_LABELS:
-                if not filters[role]: continue  # no filter on this role = any
+                if not filters[role]: continue
                 if not any(colour_matches_bucket(name, role, h) for h in filters[role]):
                     return False
             return True
 
         def _pick(name):
             apply_theme(name)
+            try: theme_btn.configure(text=f"🎨  {name}")
+            except: pass
             try: win.destroy()
             except: pass
 
         def _rebuild_grid():
-            for w in _card_widgets: 
+            for w in _card_widgets:
                 try: w.destroy()
                 except: pass
             _card_widgets.clear()
@@ -1091,9 +1045,7 @@ def build_ui():
 
             COLS = 3
             for i, (name, tdata) in enumerate(matching):
-                col = i % COLS
-                row = i // COLS
-
+                col = i % COLS; row = i // COLS
                 card = ctk.CTkFrame(grid_outer,
                                     fg_color=tdata["card"],
                                     border_color=tdata["border"],
@@ -1102,7 +1054,6 @@ def build_ui():
                 grid_outer.columnconfigure(col, weight=1)
                 _card_widgets.append(card)
 
-                # colour swatches row
                 sw_row = ctk.CTkFrame(card, fg_color="transparent"); sw_row.pack(fill="x", padx=8, pady=(8,2))
                 for role in ["bg","card","border","start","stop","sync"]:
                     swatch = ctk.CTkFrame(sw_row, width=16, height=16, corner_radius=3,
@@ -1110,7 +1061,6 @@ def build_ui():
                     swatch.pack(side="left", padx=2)
                     swatch.pack_propagate(False)
 
-                # dark/light badge
                 badge_col = "#334155" if tdata["appearance"]=="dark" else "#e2e8f0"
                 badge_tc  = "#e2e8f0" if tdata["appearance"]=="dark" else "#334155"
                 badge = ctk.CTkLabel(sw_row, text="🌙" if tdata["appearance"]=="dark" else "☀",
@@ -1119,16 +1069,13 @@ def build_ui():
                                      corner_radius=4, width=22, height=18)
                 badge.pack(side="right", padx=(0,2))
 
-                # name + select button
                 nl = ctk.CTkLabel(card, text=name,
                                   font=ctk.CTkFont(size=11, weight="bold"),
                                   text_color=tdata["text"],
                                   wraplength=180, justify="left")
                 nl.pack(anchor="w", padx=10, pady=(2,0))
 
-                # mini preview bar
-                prev = ctk.CTkFrame(card, height=8, fg_color=tdata["bg"],
-                                    corner_radius=0)
+                prev = ctk.CTkFrame(card, height=8, fg_color=tdata["bg"], corner_radius=0)
                 prev.pack(fill="x", pady=(3,0))
 
                 is_current = (name == current_theme_name)
@@ -1151,16 +1098,10 @@ def build_ui():
                                command=open_theme_picker)
     theme_btn.pack(side="left", padx=(0,6), pady=8)
 
-    # keep theme button label in sync when theme changes via settings
-    _orig_apply = apply_theme
-    def _apply_and_sync(name):
-        _orig_apply(name)
-        try: theme_btn.configure(text=f"🎨  {name}")
-        except: pass
-    # monkey-patch the local reference the Settings option-menu will call
-    globals()["apply_theme"] = _apply_and_sync
+    # Keep a module-level reference so apply_theme can update the button
+    # without a fragile globals() monkey-patch.
+    _theme_btn_refs[0] = theme_btn
 
-    # ⚙ Settings button — opens floating window
     def open_settings_window():
         win = ctk.CTkToplevel(app)
         win.title("Settings — MC CTRL")
@@ -1199,9 +1140,6 @@ def build_ui():
     network_frame    = ctk.CTkFrame(tab_content, fg_color="transparent")
     serverinfo_frame = ctk.CTkFrame(tab_content, fg_color="transparent")
     playit_frame     = ctk.CTkFrame(tab_content, fg_color="transparent")
-
-    tab_btns = {}
-
     multictrl_frame  = ctk.CTkFrame(tab_content, fg_color="transparent")
 
     all_frames = {
@@ -1211,14 +1149,14 @@ def build_ui():
         "playit":     playit_frame,
         "multictrl":  multictrl_frame,
     }
-    _built_tabs = set()   # lazy: only build when first visited
+    _built_tabs = set()
+    tab_btns = {}
 
     def show_tab(name):
         for f in all_frames.values():
             f.pack_forget()
         for n, b in tab_btns.items():
             b.configure(fg_color="transparent", text_color=T["muted"])
-        # Lazy build on first visit
         if name not in _built_tabs:
             _built_tabs.add(name)
             builders = {
@@ -1253,7 +1191,8 @@ def build_ui():
         b.pack(side="left", padx=(8 if key=="dashboard" else 2, 2), pady=6)
         tab_btns[key] = b
 
-    show_tab("dashboard")   # only dashboard is built at startup
+    show_tab("dashboard")
+
 
 # ── Dashboard ─────────────────────────────────────────────
 def build_dashboard(parent, is_fs):
@@ -1301,7 +1240,6 @@ def build_dashboard(parent, is_fs):
     btn_stop  = make_btn(left, "Stop Server",   "Kill Java process then push world to GitHub", T["stop"],  lambda: threading.Thread(target=stop_server,  daemon=True).start())
     btn_sync  = make_btn(left, "Sync & Upload", "Git add all, commit Manual Sync, push",      T["sync"],  lambda: threading.Thread(target=sync_git,     daemon=True).start())
 
-    # Quick Commands
     qf = ctk.CTkFrame(left, fg_color=T["card"], border_color=T["border"],
                       border_width=1, corner_radius=10)
     qf.pack(fill="x", pady=(8,3))
@@ -1335,7 +1273,6 @@ def build_dashboard(parent, is_fs):
                       ).grid(row=ri, column=ci, padx=3, pady=2, sticky="ew")
         qgrid.columnconfigure(ci, weight=1)
 
-    # Right log panel
     right = ctk.CTkFrame(body, fg_color="transparent")
     right.grid(row=0, column=log_col, sticky="nsew")
     right.rowconfigure(0, weight=1); right.rowconfigure(1, weight=0); right.rowconfigure(2, weight=0)
@@ -1410,12 +1347,42 @@ def build_dashboard(parent, is_fs):
                              placeholder_text="command or chat message...", height=32)
     cmd_entry.pack(side="left", fill="x", expand=True, padx=(4,8))
     cmd_entry.bind("<Return>", lambda e: send_command())
+
+    def _history_up(e):
+        if not _cmd_history: return
+        idx = _cmd_history_idx[0]
+        if idx == -1:
+            idx = len(_cmd_history) - 1
+        else:
+            idx = max(0, idx - 1)
+        _cmd_history_idx[0] = idx
+        cmd_entry.delete(0, "end")
+        cmd_entry.insert(0, _cmd_history[idx])
+        return "break"
+
+    def _history_down(e):
+        if not _cmd_history: return
+        idx = _cmd_history_idx[0]
+        if idx == -1: return
+        idx += 1
+        if idx >= len(_cmd_history):
+            _cmd_history_idx[0] = -1
+            cmd_entry.delete(0, "end")
+        else:
+            _cmd_history_idx[0] = idx
+            cmd_entry.delete(0, "end")
+            cmd_entry.insert(0, _cmd_history[idx])
+        return "break"
+
+    cmd_entry.bind("<Up>",   _history_up)
+    cmd_entry.bind("<Down>", _history_down)
     ctk.CTkButton(ci, text="Send", width=60, height=32,
                   font=ctk.CTkFont(size=12), fg_color=T["sync"],
                   hover_color=T["sync"], text_color="#000",
                   command=send_command).pack(side="left")
 
     if show_perf: build_perf_panel(container)
+
 
 # ── Perf panel ────────────────────────────────────────────
 def build_perf_panel(parent):
@@ -1449,7 +1416,7 @@ def build_perf_panel(parent):
 
 # ── Network tab ───────────────────────────────────────────
 def build_network_tab(parent):
-    import socket, urllib.request
+    import socket
 
     scroll = make_scroll_frame(parent, fg_color="transparent")
 
@@ -1467,7 +1434,6 @@ def build_network_tab(parent):
     def save_port(*_): update_setting("server_port", port_var.get())
     port_var.trace_add("write", save_port)
 
-    # Header
     hf = ctk.CTkFrame(scroll, fg_color=T["card"], border_color=T["border"],
                       border_width=1, corner_radius=10)
     hf.pack(fill="x", padx=20, pady=(12,0))
@@ -1508,7 +1474,6 @@ def build_network_tab(parent):
     grid_frame.pack(fill="x", padx=20, pady=10)
     grid_frame.columnconfigure((0,1,2), weight=1)
 
-    # Port editor
     def port_widget(p):
         pf = ctk.CTkFrame(p, fg_color="transparent"); pf.pack(fill="x", padx=14, pady=(2,6))
         e = ctk.CTkEntry(pf, textvariable=port_var, height=32,
@@ -1526,12 +1491,9 @@ def build_network_tab(parent):
     ctk.CTkFrame(port_c, height=1, fg_color=T["border"]).pack(fill="x", padx=10, pady=6)
     port_widget(port_c)
 
-    # Local / LAN IP
     def get_local(): return f"{local_ip}:{port_var.get()}"
-    local_c = ip_card(grid_frame, 0, 1, "LOCAL (LAN)",
-                      "For players on your WiFi/network",
+    local_c = ip_card(grid_frame, 0, 1, "LOCAL (LAN)", "For players on your WiFi/network",
                       get_local, T["start"])
-    # live-update LAN label when port changes
     try:
         llan = [w for w in local_c.winfo_children()
                 if isinstance(w, ctk.CTkLabel) and ":" in w.cget("text")]
@@ -1540,47 +1502,33 @@ def build_network_tab(parent):
             port_var.trace_add("write", _upd_lan)
     except: pass
 
-    # External IP
-    ext_disp = ctk.CTkLabel(grid_frame, text="", fg_color="transparent")  # placeholder
-
-    def get_ext():
-        v = ext_ip_var.get()
-        return v if "fetching" not in v.lower() else "unavailable"
-
     ext_c = ctk.CTkFrame(grid_frame, fg_color=T["card"], border_color=T["sync"],
                          border_width=2, corner_radius=12)
     ext_c.grid(row=0, column=2, padx=6, pady=6, sticky="nsew")
-    ctk.CTkLabel(ext_c, text="EXTERNAL (INTERNET)",
-                 font=ctk.CTkFont(size=10, weight="bold"), text_color=T["sync"]).pack(anchor="w", padx=14, pady=(12,2))
-    ctk.CTkLabel(ext_c, text="For players outside your network",
-                 font=ctk.CTkFont(size=9), text_color=T["muted"]).pack(anchor="w", padx=14)
+    ctk.CTkLabel(ext_c, text="EXTERNAL (INTERNET)", font=ctk.CTkFont(size=10, weight="bold"),
+                 text_color=T["sync"]).pack(anchor="w", padx=14, pady=(12,2))
+    ctk.CTkLabel(ext_c, text="For players outside your network", font=ctk.CTkFont(size=9),
+                 text_color=T["muted"]).pack(anchor="w", padx=14)
     ctk.CTkFrame(ext_c, height=1, fg_color=T["border"]).pack(fill="x", padx=10, pady=6)
     ext_val_lbl = ctk.CTkLabel(ext_c, textvariable=ext_ip_var,
                                font=ctk.CTkFont(size=13, weight="bold", family="Consolas"),
                                text_color=T["sync"])
     ext_val_lbl.pack(padx=14, pady=(2,6))
-    ctk.CTkButton(ext_c, text="Copy IP",
-                  font=ctk.CTkFont(size=11), height=30, corner_radius=6,
+    ctk.CTkButton(ext_c, text="Copy IP", font=ctk.CTkFont(size=11), height=30, corner_radius=6,
                   fg_color=T["sync"], hover_color=T["sync"], text_color="#000",
                   command=lambda: copy_to_clip(ext_ip_var.get())).pack(padx=14, pady=(0,12), fill="x")
 
-    # Row 2: localhost + custom domain
-    grid_frame.columnconfigure((0,1,2), weight=1)
-
     def get_localhost(): return f"localhost:{port_var.get()}"
-    ip_card(grid_frame, 1, 0, "LOCALHOST",
-            "For testing on this PC",
-            get_localhost, T["handoff"])
+    ip_card(grid_frame, 1, 0, "LOCALHOST", "For testing on this PC", get_localhost, T["handoff"])
 
-    # Custom domain card
     custom_var = ctk.StringVar(value=load_settings().get("custom_ip",""))
     cust_c = ctk.CTkFrame(grid_frame, fg_color=T["card"], border_color=T["border"],
                           border_width=2, corner_radius=12)
     cust_c.grid(row=1, column=1, padx=6, pady=6, sticky="nsew", columnspan=2)
-    ctk.CTkLabel(cust_c, text="CUSTOM DOMAIN / PROXY",
-                 font=ctk.CTkFont(size=10, weight="bold"), text_color=T["muted"]).pack(anchor="w", padx=14, pady=(12,2))
-    ctk.CTkLabel(cust_c, text="e.g. play.yourserver.net  —  set if you have a domain or proxy",
-                 font=ctk.CTkFont(size=9), text_color=T["muted"]).pack(anchor="w", padx=14)
+    ctk.CTkLabel(cust_c, text="CUSTOM DOMAIN / PROXY", font=ctk.CTkFont(size=10, weight="bold"),
+                 text_color=T["muted"]).pack(anchor="w", padx=14, pady=(12,2))
+    ctk.CTkLabel(cust_c, text="e.g. play.yourserver.net", font=ctk.CTkFont(size=9),
+                 text_color=T["muted"]).pack(anchor="w", padx=14)
     ctk.CTkFrame(cust_c, height=1, fg_color=T["border"]).pack(fill="x", padx=10, pady=6)
     cust_row = ctk.CTkFrame(cust_c, fg_color="transparent"); cust_row.pack(fill="x", padx=14, pady=(0,6))
     cust_entry = ctk.CTkEntry(cust_row, textvariable=custom_var, height=30,
@@ -1596,22 +1544,18 @@ def build_network_tab(parent):
             show_toast(f"Custom domain set to {v}", T["sync"])
     ctk.CTkButton(cust_row, text="Set", width=60, height=30,
                   font=ctk.CTkFont(size=11), fg_color=T["sync"],
-                  hover_color=T["sync"], text_color="#000",
-                  command=set_custom).pack(side="left")
-    ctk.CTkButton(cust_c, text="Copy Custom Domain",
-                  font=ctk.CTkFont(size=11), height=30, corner_radius=6,
-                  fg_color="transparent", border_width=1,
-                  border_color=T["border"], text_color=T["muted"],
-                  hover_color=T["border"],
+                  hover_color=T["sync"], text_color="#000", command=set_custom).pack(side="left")
+    ctk.CTkButton(cust_c, text="Copy Custom Domain", font=ctk.CTkFont(size=11), height=30,
+                  corner_radius=6, fg_color="transparent", border_width=1,
+                  border_color=T["border"], text_color=T["muted"], hover_color=T["border"],
                   command=lambda: copy_to_clip(f"{custom_var.get()}:{port_var.get()}")
                   ).pack(padx=14, pady=(0,12))
 
-    # Connection guide
     guide = ctk.CTkFrame(scroll, fg_color=T["card"], border_color=T["border"],
                          border_width=1, corner_radius=10)
     guide.pack(fill="x", padx=20, pady=(0,12))
-    ctk.CTkLabel(guide, text="CONNECTION GUIDE",
-                 font=ctk.CTkFont(size=10), text_color=T["muted"]).pack(anchor="w", padx=14, pady=(10,6))
+    ctk.CTkLabel(guide, text="CONNECTION GUIDE", font=ctk.CTkFont(size=10),
+                 text_color=T["muted"]).pack(anchor="w", padx=14, pady=(10,6))
     ctk.CTkFrame(guide, height=1, fg_color=T["border"]).pack(fill="x", padx=14)
     ctk.CTkLabel(guide, text=(
         "1. Same house / WiFi  →  share the LOCAL (LAN) address.\n"
@@ -1621,134 +1565,6 @@ def build_network_tab(parent):
     ), font=ctk.CTkFont(size=12), text_color=T["muted"],
        justify="left", wraplength=900).pack(anchor="w", padx=14, pady=(8,12))
 
-    # ── Quick World Switcher (in Network tab) ─────────────
-    wqf = ctk.CTkFrame(scroll, fg_color=T["card"], border_color=T["border"],
-                       border_width=1, corner_radius=10)
-    wqf.pack(fill="x", padx=20, pady=(0,12))
-    wqh = ctk.CTkFrame(wqf, fg_color="transparent"); wqh.pack(fill="x", padx=14, pady=(10,4))
-    ctk.CTkLabel(wqh, text="ACTIVE SERVER",
-                 font=ctk.CTkFont(size=10), text_color=T["muted"]).pack(side="left")
-    ctk.CTkFrame(wqf, height=1, fg_color=T["border"]).pack(fill="x", padx=14)
-    wqb = ctk.CTkFrame(wqf, fg_color="transparent"); wqb.pack(fill="x", padx=14, pady=(6, 10))
-    ctk.CTkLabel(wqb, text="Select which server folder to load when the server starts (updates level-name in server.properties).",
-                 font=ctk.CTkFont(size=11), text_color=T["muted"], wraplength=820,
-                 justify="left").pack(anchor="w", pady=(0, 6))
-
-    wq_inner = ctk.CTkFrame(wqb, fg_color=T["bg"], border_color=T["border"],
-                             border_width=1, corner_radius=8)
-    wq_inner.pack(fill="x")
-
-    def _net_get_worlds():
-        path = load_settings().get("srv_path", SRV_PATH)
-        try:
-            folders = []
-            for e in sorted(os.listdir(path)):
-                full = os.path.join(path, e)
-                if not os.path.isdir(full) or e.startswith("."):
-                    continue
-                # Only treat as a server instance if it has server.properties
-                if os.path.exists(os.path.join(full, "server.properties")):
-                    folders.append(e)
-            return folders if folders else []
-        except: return []
-
-    def _net_read_active():
-        path = load_settings().get("srv_path", SRV_PATH)
-        try:
-            with open(os.path.join(path, "server.properties"), encoding="utf-8", errors="ignore") as f:
-                for line in f:
-                    line = line.strip()
-                    if line.startswith("level-name") and "=" in line:
-                        return line.split("=", 1)[1].strip()
-        except: pass
-        return "world"
-
-    def _net_set_world(name):
-        path = load_settings().get("srv_path", SRV_PATH)
-        props = os.path.join(path, "server.properties")
-        try:
-            if os.path.exists(props):
-                with open(props, encoding="utf-8", errors="ignore") as f: lines = f.readlines()
-                new_lines = []; found = False
-                for line in lines:
-                    if line.strip().startswith("level-name") and "=" in line:
-                        new_lines.append(f"level-name={name}\n"); found = True
-                    else: new_lines.append(line)
-                if not found: new_lines.append(f"level-name={name}\n")
-                with open(props, "w", encoding="utf-8") as f: f.writelines(new_lines)
-            show_toast(f"Active server → {name}", T["start"])
-            _net_refresh_worlds()
-        except Exception as ex: show_toast(f"Error: {ex}", T["stop"])
-
-    def _net_refresh_worlds():
-        for w in wq_inner.winfo_children(): w.destroy()
-        worlds = _net_get_worlds()
-        active = _net_read_active()
-        # Header row with count
-        row_top = ctk.CTkFrame(wq_inner, fg_color="transparent")
-        row_top.pack(fill="x", padx=10, pady=(8, 4))
-        ctk.CTkLabel(row_top,
-                     text=f"Found {len(worlds)} server instance{'s' if len(worlds)!=1 else ''} (subfolders with server.properties):",
-                     font=ctk.CTkFont(size=11), text_color=T["muted"]).pack(side="left")
-        if not worlds or worlds == ["world"]:
-            ctk.CTkLabel(wq_inner, text="No sub-servers found.\nEach must be a subfolder containing server.properties.",
-                         font=ctk.CTkFont(size=11), text_color=T["muted"]).pack(padx=10, pady=(0,8))
-        for wname in worlds:
-            wr = ctk.CTkFrame(wq_inner,
-                              fg_color=T["card"] if wname==active else "transparent",
-                              corner_radius=6)
-            wr.pack(fill="x", padx=10, pady=2)
-            is_active = (wname == active)
-            dot = ctk.CTkLabel(wr, text="●" if is_active else "○", width=20,
-                               font=ctk.CTkFont(size=14),
-                               text_color=T["start"] if is_active else T["muted"])
-            dot.pack(side="left", padx=(8,4), pady=6)
-            ctk.CTkLabel(wr, text=wname,
-                         font=ctk.CTkFont(size=12, weight="bold" if is_active else "normal"),
-                         text_color=T["start"] if is_active else T["text"]).pack(side="left")
-            if is_active:
-                ctk.CTkLabel(wr, text="  ← active", font=ctk.CTkFont(size=10),
-                             text_color=T["start"]).pack(side="left")
-            else:
-                ctk.CTkButton(wr, text="Switch to This", width=110, height=26,
-                              font=ctk.CTkFont(size=11), fg_color=T["sync"],
-                              hover_color=T["border"], text_color="#000",
-                              command=lambda n=wname: _net_set_world(n)).pack(side="right", padx=6, pady=4)
-        # Manual / browse entry
-        ctk.CTkFrame(wq_inner, height=1, fg_color=T["border"]).pack(fill="x", padx=10, pady=(6, 0))
-        man = ctk.CTkFrame(wq_inner, fg_color="transparent"); man.pack(fill="x", padx=10, pady=(6, 10))
-        ctk.CTkLabel(man, text="Or type:", font=ctk.CTkFont(size=11),
-                     text_color=T["muted"]).pack(side="left", padx=(0, 6))
-        _mwv = ctk.StringVar()
-        ctk.CTkEntry(man, textvariable=_mwv, width=150, height=28,
-                     font=ctk.CTkFont(size=12, family="Consolas"),
-                     fg_color=T["bg"], border_color=T["border"], text_color=T["text"],
-                     placeholder_text="server_folder_name").pack(side="left", padx=(0, 6))
-        ctk.CTkButton(man, text="Set", width=50, height=28,
-                      font=ctk.CTkFont(size=11), fg_color=T["start"],
-                      hover_color=T["start"], text_color="#000",
-                      command=lambda: _mwv.get().strip() and _net_set_world(_mwv.get().strip())
-                      ).pack(side="left", padx=(0, 6))
-        def _browse_srv():
-            import tkinter.filedialog as _fd
-            p = load_settings().get("srv_path", SRV_PATH)
-            chosen = _fd.askdirectory(title="Select server folder", initialdir=p)
-            if chosen:
-                folder = os.path.basename(chosen)
-                _net_set_world(folder)
-        ctk.CTkButton(man, text="Browse…", width=72, height=28,
-                      font=ctk.CTkFont(size=11), fg_color="transparent",
-                      border_width=1, border_color=T["border"],
-                      text_color=T["muted"], hover_color=T["border"],
-                      command=_browse_srv).pack(side="left")
-
-    _net_refresh_worlds()
-    ctk.CTkButton(wqh, text="Refresh", width=70, height=22,
-                  font=ctk.CTkFont(size=10), fg_color="transparent",
-                  border_width=1, border_color=T["border"],
-                  text_color=T["muted"], hover_color=T["border"],
-                  command=_net_refresh_worlds).pack(side="right")
-
     def fetch_ext():
         try:
             ip = urllib.request.urlopen("https://api.ipify.org", timeout=5).read().decode()
@@ -1757,6 +1573,7 @@ def build_network_tab(parent):
                 f"{saved}:{port_var.get()}" if saved else f"{ip}:{port_var.get()}"))
         except: app.after(0, lambda: ext_ip_var.set("unavailable"))
     threading.Thread(target=fetch_ext, daemon=True).start()
+
 
 # ── Server Info tab ───────────────────────────────────────
 def build_server_info_tab(parent):
@@ -1773,7 +1590,7 @@ def build_server_info_tab(parent):
         body = ctk.CTkFrame(f, fg_color="transparent"); body.pack(fill="x", padx=14, pady=(6,12))
         return body, h
 
-    # ── Online Players ────────────────────────────────────
+    # ── Online Players ─────────────────────────────────────
     pb, ph = section_card("Online Players")
     players_frame = ctk.CTkFrame(pb, fg_color=T["bg"], border_color=T["border"],
                                  border_width=1, corner_radius=8)
@@ -1788,16 +1605,13 @@ def build_server_info_tab(parent):
         else:
             for name in sorted(names):
                 joined = online_players.get(name, "?")
-                r = ctk.CTkFrame(players_frame, fg_color="transparent")
-                r.pack(fill="x", padx=10, pady=3)
+                r = ctk.CTkFrame(players_frame, fg_color="transparent"); r.pack(fill="x", padx=10, pady=3)
                 ctk.CTkLabel(r, text="●", font=ctk.CTkFont(size=12),
                              text_color=T["start"]).pack(side="left", padx=(0,8))
-                ctk.CTkLabel(r, text=name,
-                             font=ctk.CTkFont(size=13, weight="bold"),
+                ctk.CTkLabel(r, text=name, font=ctk.CTkFont(size=13, weight="bold"),
                              text_color=T["text"]).pack(side="left")
-                ctk.CTkLabel(r, text=f"joined {joined}",
-                             font=ctk.CTkFont(size=10), text_color=T["muted"]).pack(side="left", padx=8)
-                # Copy player name
+                ctk.CTkLabel(r, text=f"joined {joined}", font=ctk.CTkFont(size=10),
+                             text_color=T["muted"]).pack(side="left", padx=8)
                 ctk.CTkButton(r, text="Copy Name", width=80, height=22,
                               font=ctk.CTkFont(size=10), fg_color="transparent",
                               border_width=1, border_color=T["border"],
@@ -1818,7 +1632,6 @@ def build_server_info_tab(parent):
         try: refresh_players_now()
         except: pass
         _players_refresh_id = app.after(2000, _auto_refresh_players)
-
     _auto_refresh_players()
 
     ctk.CTkButton(ph, text="Force Refresh", width=90, height=22,
@@ -1826,148 +1639,6 @@ def build_server_info_tab(parent):
                   hover_color=T["sync"], text_color="#000",
                   command=lambda: (send_server_cmd("list"), refresh_players_now())
                   ).pack(side="right")
-
-    # ── Active Server Selector ────────────────────────────────
-    wb, wh = section_card("Active Server")
-    ctk.CTkLabel(wb, text=(
-        "Select which server folder loads when the server starts. "
-        "This updates level-name in server.properties."
-    ), font=ctk.CTkFont(size=11), text_color=T["muted"], wraplength=820,
-       justify="left").pack(anchor="w", pady=(0, 6))
-
-    world_sel_frame = ctk.CTkFrame(wb, fg_color=T["bg"], border_color=T["border"],
-                                   border_width=1, corner_radius=8)
-    world_sel_frame.pack(fill="x")
-
-    _active_world_var = ctk.StringVar(value="world")
-
-    def _get_world_folders():
-        path = load_settings().get("srv_path", SRV_PATH)
-        try:
-            folders = []
-            for entry in sorted(os.listdir(path)):
-                full = os.path.join(path, entry)
-                if not os.path.isdir(full) or entry.startswith("."):
-                    continue
-                # Only treat as a server instance if it has server.properties
-                if os.path.exists(os.path.join(full, "server.properties")):
-                    folders.append(entry)
-            return folders if folders else []
-        except:
-            return []
-
-    def _read_active_world():
-        path = load_settings().get("srv_path", SRV_PATH)
-        try:
-            with open(os.path.join(path, "server.properties"), encoding="utf-8", errors="ignore") as f:
-                for line in f:
-                    line = line.strip()
-                    if line.startswith("level-name") and "=" in line:
-                        return line.split("=", 1)[1].strip()
-        except:
-            pass
-        return "world"
-
-    def _set_active_world(name):
-        path = load_settings().get("srv_path", SRV_PATH)
-        props_path = os.path.join(path, "server.properties")
-        try:
-            if os.path.exists(props_path):
-                with open(props_path, encoding="utf-8", errors="ignore") as f:
-                    lines = f.readlines()
-                new_lines = []
-                found = False
-                for line in lines:
-                    if line.strip().startswith("level-name") and "=" in line:
-                        new_lines.append(f"level-name={name}\n")
-                        found = True
-                    else:
-                        new_lines.append(line)
-                if not found:
-                    new_lines.append(f"level-name={name}\n")
-                with open(props_path, "w", encoding="utf-8") as f:
-                    f.writelines(new_lines)
-            _active_world_var.set(name)
-            show_toast(f"Active server set to: {name}", T["start"])
-        except Exception as ex:
-            show_toast(f"Error updating world: {ex}", T["stop"])
-
-    def _refresh_world_list():
-        for w in world_sel_frame.winfo_children():
-            w.destroy()
-        worlds = _get_world_folders()
-        active = _read_active_world()
-        _active_world_var.set(active)
-
-        row_top = ctk.CTkFrame(world_sel_frame, fg_color="transparent")
-        row_top.pack(fill="x", padx=10, pady=(8, 4))
-        ctk.CTkLabel(row_top,
-                     text=f"Found {len(worlds)} server instance{'s' if len(worlds)!=1 else ''} (subfolders with server.properties):",
-                     font=ctk.CTkFont(size=11), text_color=T["muted"]).pack(side="left")
-
-        if not worlds:
-            ctk.CTkLabel(world_sel_frame, text="No sub-servers found. Each server must have its own subfolder\ncontaining server.properties.",
-                         font=ctk.CTkFont(size=11), text_color=T["muted"]).pack(padx=14, pady=(0,8))
-        for wname in worlds:
-            wr = ctk.CTkFrame(world_sel_frame,
-                              fg_color=T["card"] if wname==active else "transparent",
-                              corner_radius=6)
-            wr.pack(fill="x", padx=10, pady=2)
-            is_active = (wname == active)
-            ctk.CTkLabel(wr, text="●" if is_active else "○", width=20,
-                         font=ctk.CTkFont(size=14),
-                         text_color=T["start"] if is_active else T["muted"]).pack(side="left", padx=(8,4), pady=6)
-            ctk.CTkLabel(wr, text=wname,
-                         font=ctk.CTkFont(size=12, weight="bold" if is_active else "normal"),
-                         text_color=T["start"] if is_active else T["text"]).pack(side="left")
-            if is_active:
-                ctk.CTkLabel(wr, text="  ← active", font=ctk.CTkFont(size=10),
-                             text_color=T["start"]).pack(side="left")
-            else:
-                ctk.CTkButton(wr, text="Switch to This", width=110, height=26,
-                              font=ctk.CTkFont(size=11),
-                              fg_color=T["sync"], hover_color=T["border"], text_color="#000",
-                              command=lambda n=wname: (_set_active_world(n), _refresh_world_list())
-                              ).pack(side="right", padx=6, pady=4)
-
-        # Manual / browse row
-        ctk.CTkFrame(world_sel_frame, height=1, fg_color=T["border"]).pack(fill="x", padx=10, pady=(6, 0))
-        man_row = ctk.CTkFrame(world_sel_frame, fg_color="transparent")
-        man_row.pack(fill="x", padx=10, pady=(6, 10))
-        ctk.CTkLabel(man_row, text="Or type:",
-                     font=ctk.CTkFont(size=11), text_color=T["muted"]).pack(side="left", padx=(0, 6))
-        _manual_world_var = ctk.StringVar()
-        ctk.CTkEntry(man_row, textvariable=_manual_world_var, width=150, height=28,
-                     font=ctk.CTkFont(size=12, family="Consolas"),
-                     fg_color=T["bg"], border_color=T["border"], text_color=T["text"],
-                     placeholder_text="server_folder_name").pack(side="left", padx=(0, 6))
-        ctk.CTkButton(man_row, text="Set", width=50, height=28,
-                      font=ctk.CTkFont(size=11), fg_color=T["start"],
-                      hover_color=T["start"], text_color="#000",
-                      command=lambda: (
-                          _manual_world_var.get().strip() and
-                          _set_active_world(_manual_world_var.get().strip()) and
-                          _refresh_world_list()
-                      )).pack(side="left", padx=(0, 6))
-        def _browse_srv_info():
-            import tkinter.filedialog as _fd
-            p = load_settings().get("srv_path", SRV_PATH)
-            chosen = _fd.askdirectory(title="Select server folder", initialdir=p)
-            if chosen:
-                _set_active_world(os.path.basename(chosen))
-                _refresh_world_list()
-        ctk.CTkButton(man_row, text="Browse…", width=72, height=28,
-                      font=ctk.CTkFont(size=11), fg_color="transparent",
-                      border_width=1, border_color=T["border"],
-                      text_color=T["muted"], hover_color=T["border"],
-                      command=_browse_srv_info).pack(side="left")
-
-    _refresh_world_list()
-    ctk.CTkButton(wh, text="Refresh", width=70, height=22,
-                  font=ctk.CTkFont(size=10), fg_color="transparent",
-                  border_width=1, border_color=T["border"],
-                  text_color=T["muted"], hover_color=T["border"],
-                  command=_refresh_world_list).pack(side="right")
 
     # ── Plugins ───────────────────────────────────────────
     plb, plh = section_card("Plugins")
@@ -2006,7 +1677,7 @@ def build_server_info_tab(parent):
                   text_color=T["muted"], hover_color=T["border"],
                   command=refresh_plugins).pack(side="right")
 
-    # ── Resource Packs ────────────────────────────────────
+    # ── Resource Packs ─────────────────────────────────────
     rpb, rph = section_card("Resource Packs")
     rp_list_frame = ctk.CTkFrame(rpb, fg_color=T["bg"], border_color=T["border"],
                                   border_width=1, corner_radius=8)
@@ -2017,7 +1688,6 @@ def build_server_info_tab(parent):
         for d in ["resource-packs", "resourcepacks", "resources"]:
             dp = os.path.join(path, d)
             if os.path.isdir(dp): return dp
-        # Default: resource-packs folder
         rp = os.path.join(path, "resource-packs")
         os.makedirs(rp, exist_ok=True)
         return rp
@@ -2033,13 +1703,11 @@ def build_server_info_tab(parent):
                     if x.endswith((".zip",".jar")): found.append((dp, x))
         if not found:
             drop_hint = " | Drag & drop .zip files here" if _DND_AVAILABLE else ""
-            ctk.CTkLabel(rp_list_frame,
-                         text=f"No resource packs found.{drop_hint}",
+            ctk.CTkLabel(rp_list_frame, text=f"No resource packs found.{drop_hint}",
                          font=ctk.CTkFont(size=12), text_color=T["muted"]).pack(padx=14, pady=10)
         else:
             for dp, rp in sorted(found, key=lambda x: x[1]):
-                r = ctk.CTkFrame(rp_list_frame, fg_color="transparent")
-                r.pack(fill="x", padx=10, pady=3)
+                r = ctk.CTkFrame(rp_list_frame, fg_color="transparent"); r.pack(fill="x", padx=10, pady=3)
                 size_kb = os.path.getsize(os.path.join(dp, rp)) // 1024
                 ctk.CTkLabel(r, text=rp, font=ctk.CTkFont(size=12), text_color=T["text"]).pack(side="left")
                 ctk.CTkLabel(r, text=f"{size_kb} KB", font=ctk.CTkFont(size=10),
@@ -2051,10 +1719,8 @@ def build_server_info_tab(parent):
                               command=lambda p=dp, n=rp: _remove_rp(p, n, refresh_respacks)
                               ).pack(side="right")
 
-        # Drop zone
-        dz_color = T["border"]
         dz = ctk.CTkFrame(rp_list_frame, fg_color="transparent",
-                          border_color=dz_color, border_width=2, corner_radius=8)
+                          border_color=T["border"], border_width=2, corner_radius=8)
         dz.pack(fill="x", padx=10, pady=(6,10))
         dz_hint = "Drop .zip / .jar here  OR  click Browse to add a resource pack"
         if not _DND_AVAILABLE:
@@ -2066,8 +1732,6 @@ def build_server_info_tab(parent):
                       hover_color=T["sync"], text_color="#000",
                       command=lambda: _browse_rp(get_rp_dir, refresh_respacks)
                       ).pack(pady=(0,10))
-
-        # Enable drag-and-drop if tkinterdnd2 is available
         if _DND_AVAILABLE:
             try:
                 dz.drop_target_register(dnd.DND_FILES)
@@ -2077,38 +1741,30 @@ def build_server_info_tab(parent):
     def _remove_rp(folder, name, refresh_fn):
         try:
             os.remove(os.path.join(folder, name))
-            show_toast(f"Removed {name}", T["stop"])
-            refresh_fn()
+            show_toast(f"Removed {name}", T["stop"]); refresh_fn()
         except Exception as ex:
             show_toast(f"Error: {ex}", T["stop"])
 
     def _browse_rp(get_dir_fn, refresh_fn):
-        import tkinter.filedialog as fd
-        files = fd.askopenfilenames(
+        files = _tk_fd.askopenfilenames(
             title="Select Resource Pack(s)",
             filetypes=[("Resource Packs", "*.zip *.jar"), ("All files", "*.*")])
         if not files: return
         dest = get_dir_fn()
         for src in files:
-            try:
-                shutil.copy2(src, os.path.join(dest, os.path.basename(src)))
-            except Exception as ex:
-                log(f"Copy failed: {ex}")
-        show_toast(f"Installed {len(files)} pack(s)", T["start"])
-        refresh_fn()
+            try: shutil.copy2(src, os.path.join(dest, os.path.basename(src)))
+            except Exception as ex: log(f"Copy failed: {ex}")
+        show_toast(f"Installed {len(files)} pack(s)", T["start"]); refresh_fn()
 
     def _handle_rp_drop(data, dest_dir, refresh_fn):
-        # tkinterdnd2 gives paths wrapped in braces or space-separated
         paths = re.findall(r'\{([^}]+)\}|(\S+)', data)
         paths = [p[0] or p[1] for p in paths]
         count = 0
         for src in paths:
             if src.endswith((".zip",".jar")):
                 try:
-                    shutil.copy2(src, os.path.join(dest_dir, os.path.basename(src)))
-                    count += 1
-                except Exception as ex:
-                    log(f"Drop copy failed: {ex}")
+                    shutil.copy2(src, os.path.join(dest_dir, os.path.basename(src))); count += 1
+                except Exception as ex: log(f"Drop copy failed: {ex}")
         if count: show_toast(f"Installed {count} pack(s)", T["start"])
         refresh_fn()
 
@@ -2119,43 +1775,29 @@ def build_server_info_tab(parent):
                   text_color=T["muted"], hover_color=T["border"],
                   command=refresh_respacks).pack(side="right")
 
-    # ── Server Properties ─────────────────────────────────
+    # ── Server Properties ──────────────────────────────────
     spb, sph = section_card("Server Properties")
-
     ALL_PROPS = [
-        ("gamemode",             "Game Mode",              "survival"),
-        ("difficulty",           "Difficulty",             "easy"),
-        ("max-players",          "Max Players",            "20"),
-        ("view-distance",        "View Distance",          "10"),
-        ("simulation-distance",  "Simulation Distance",    "10"),
-        ("server-port",          "Port",                   "25565"),
-        ("online-mode",          "Online Mode",            "true"),
-        ("pvp",                  "PvP",                    "true"),
-        ("spawn-monsters",       "Spawn Monsters",         "true"),
-        ("spawn-animals",        "Spawn Animals",          "true"),
-        ("allow-flight",         "Allow Flight",           "false"),
-        ("white-list",           "Whitelist",              "false"),
-        ("enforce-whitelist",    "Enforce Whitelist",      "false"),
-        ("level-name",           "World Name",             "world"),
-        ("motd",                 "MOTD",                   "A Minecraft Server"),
-        ("spawn-protection",     "Spawn Protection Radius","16"),
-        ("level-seed",           "World Seed",             ""),
-        ("max-world-size",       "Max World Size",         "29999984"),
-        ("allow-nether",         "Allow Nether",           "true"),
-        ("enable-command-block", "Command Blocks",         "false"),
-        ("enable-rcon",          "Enable RCON",            "false"),
-        ("rcon.password",        "RCON Password",          ""),
-        ("rcon.port",            "RCON Port",              "25575"),
+        ("gamemode","Game Mode","survival"),("difficulty","Difficulty","easy"),
+        ("max-players","Max Players","20"),("view-distance","View Distance","10"),
+        ("simulation-distance","Simulation Distance","10"),("server-port","Port","25565"),
+        ("online-mode","Online Mode","true"),("pvp","PvP","true"),
+        ("spawn-monsters","Spawn Monsters","true"),("spawn-animals","Spawn Animals","true"),
+        ("allow-flight","Allow Flight","false"),("white-list","Whitelist","false"),
+        ("enforce-whitelist","Enforce Whitelist","false"),("level-name","World Name","world"),
+        ("motd","MOTD","A Minecraft Server"),("spawn-protection","Spawn Protection Radius","16"),
+        ("level-seed","World Seed",""),("max-world-size","Max World Size","29999984"),
+        ("allow-nether","Allow Nether","true"),("enable-command-block","Command Blocks","false"),
+        ("enable-rcon","Enable RCON","false"),("rcon.password","RCON Password",""),
+        ("rcon.port","RCON Port","25575"),
     ]
-
-    props_vars = {}   # key -> StringVar
+    props_vars = {}
 
     def load_props():
         path = load_settings().get("srv_path", SRV_PATH)
         kv = {}
         try:
-            with open(os.path.join(path, "server.properties"), "r",
-                      encoding="utf-8", errors="ignore") as fp:
+            with open(os.path.join(path, "server.properties"), "r", encoding="utf-8", errors="ignore") as fp:
                 for line in fp:
                     line = line.strip()
                     if line and not line.startswith("#") and "=" in line:
@@ -2169,20 +1811,17 @@ def build_server_info_tab(parent):
         try:
             with open(prop_file, "r", encoding="utf-8", errors="ignore") as fp:
                 lines = fp.readlines()
-            updated = set()
-            new_lines = []
+            updated = set(); new_lines = []
             for line in lines:
                 stripped = line.strip()
                 if stripped and not stripped.startswith("#") and "=" in stripped:
                     k, _, _ = stripped.partition("="); k = k.strip()
                     if k in props_vars:
-                        new_lines.append(f"{k}={props_vars[k].get()}\n")
-                        updated.add(k)
+                        new_lines.append(f"{k}={props_vars[k].get()}\n"); updated.add(k)
                     else:
                         new_lines.append(line)
                 else:
                     new_lines.append(line)
-            # Add new keys not already in file
             for k in props_vars:
                 if k not in updated:
                     new_lines.append(f"{k}={props_vars[k].get()}\n")
@@ -2199,17 +1838,15 @@ def build_server_info_tab(parent):
     pg.columnconfigure((0,1,2), weight=1)
     for i, (key, label, default) in enumerate(ALL_PROPS):
         val = kv.get(key, default)
-        var = ctk.StringVar(value=val)
-        props_vars[key] = var
+        var = ctk.StringVar(value=val); props_vars[key] = var
         cell = ctk.CTkFrame(pg, fg_color="transparent")
         cell.grid(row=i//3, column=i%3, padx=4, pady=3, sticky="ew")
         ctk.CTkLabel(cell, text=label, font=ctk.CTkFont(size=10),
                      text_color=T["muted"], anchor="w").pack(anchor="w")
-        e = ctk.CTkEntry(cell, textvariable=var, height=28,
-                         font=ctk.CTkFont(size=11, family="Consolas"),
-                         fg_color=T["card"], border_color=T["border"],
-                         text_color=T["text"])
-        e.pack(fill="x")
+        ctk.CTkEntry(cell, textvariable=var, height=28,
+                     font=ctk.CTkFont(size=11, family="Consolas"),
+                     fg_color=T["card"], border_color=T["border"],
+                     text_color=T["text"]).pack(fill="x")
 
     ctk.CTkButton(spb, text="Save server.properties", height=36, corner_radius=8,
                   font=ctk.CTkFont(size=12, weight="bold"),
@@ -2226,12 +1863,10 @@ def build_server_info_tab(parent):
                                    if (var := props_vars.get(k)) is not None]
                   ).pack(side="right")
 
-
     ctk.CTkFrame(scroll, height=12, fg_color="transparent").pack()
-
-    # World Creation
     _build_world_creation_section(scroll)
     ctk.CTkFrame(scroll, height=12, fg_color="transparent").pack()
+
 
 # ── World Creation ─────────────────────────────────────────
 def _build_world_creation_section(scroll):
@@ -2265,30 +1900,17 @@ def _build_world_creation_section(scroll):
                       ).pack(side="left", padx=(0,20))
     ctk.CTkLabel(r0, text="MC Version", font=ctk.CTkFont(size=12),
                  text_color=T["text"], width=90, anchor="w").pack(side="left")
-    MC_VERSIONS = [
-        "latest",
-        "1.21.4", "1.21.3", "1.21.1", "1.21",
-        "1.20.6", "1.20.4", "1.20.2", "1.20.1", "1.20",
-        "1.19.4", "1.19.3", "1.19.2", "1.19.1", "1.19",
-        "1.18.2", "1.18.1", "1.18",
-        "1.17.1", "1.17",
-        "1.16.5", "1.16.4", "1.16.3", "1.16.2", "1.16.1", "1.16",
-        "1.15.2", "1.15.1", "1.15",
-        "1.14.4", "1.14.3", "1.14.2", "1.14.1", "1.14",
-        "1.13.2", "1.13.1", "1.13",
-        "1.12.2", "1.12.1", "1.12",
-        "1.8.9", "1.8",
-    ]
+    MC_VERSIONS = ["latest","1.21.4","1.21.3","1.21.1","1.21","1.20.6","1.20.4","1.20.2",
+                   "1.20.1","1.20","1.19.4","1.19.2","1.19","1.18.2","1.18","1.17.1",
+                   "1.16.5","1.16.1","1.15.2","1.14.4","1.12.2","1.8.9","1.8"]
     _s_mc = load_settings()
     mc_ver_var = ctk.StringVar(value=_s_mc.get("mc_version", "latest"))
     def _save_mc_ver(v): update_setting("mc_version", v)
-    ctk.CTkOptionMenu(r0, values=MC_VERSIONS, variable=mc_ver_var,
-                      command=_save_mc_ver,
+    ctk.CTkOptionMenu(r0, values=MC_VERSIONS, variable=mc_ver_var, command=_save_mc_ver,
                       font=ctk.CTkFont(size=12), width=140, height=30,
-                      fg_color=T["bg"], button_color=T["border"],
-                      button_hover_color=T["muted"], text_color=T["text"],
-                      dropdown_fg_color=T["card"], dropdown_text_color=T["text"],
-                      dropdown_hover_color=T["border"]).pack(side="left")
+                      fg_color=T["bg"], button_color=T["border"], button_hover_color=T["muted"],
+                      text_color=T["text"], dropdown_fg_color=T["card"],
+                      dropdown_text_color=T["text"], dropdown_hover_color=T["border"]).pack(side="left")
 
     r1 = ctk.CTkFrame(wcb, fg_color="transparent"); r1.pack(fill="x", pady=(4,0))
     ctk.CTkLabel(r1, text="World Name", font=ctk.CTkFont(size=12),
@@ -2382,77 +2004,52 @@ def _build_world_creation_section(scroll):
             return False
 
     def _paper_url(ver):
-        # PaperMC fill.papermc.io v3 API
-        # GET /v3/projects/paper           → {"versions": ["1.21.1", ...], ...}
-        # GET /v3/projects/paper/versions/{ver}/builds
-        #   → {"builds": [{"channel":"STABLE","downloads":{"server:default":{"url":"..."}}},...]}
         base = "https://fill.papermc.io/v3/projects/paper"
-        hdrs = {"User-Agent": "MC-CTRL/1.0 (github.com/GamerMahir07)"}
+        hdrs = {"User-Agent": "MC-CTRL/1.0"}
         try:
-            with urllib.request.urlopen(
-                    urllib.request.Request(base, headers=hdrs), timeout=15) as r:
+            with urllib.request.urlopen(urllib.request.Request(base, headers=hdrs), timeout=15) as r:
                 data = json.loads(r.read())
-            # v3 returns a flat "versions" list
             versions = data.get("versions", [])
-            if not versions:
-                return None, "No versions returned by PaperMC API"
-            if ver == "latest":
-                ver = versions[-1]
-            elif ver not in versions:
-                return None, f"Version {ver} not found. Available: {', '.join(versions[-5:])}"
+            if not versions: return None, "No versions returned by PaperMC API"
+            if ver == "latest": ver = versions[-1]
+            elif ver not in versions: return None, f"Version {ver} not found"
             builds_url = f"{base}/versions/{ver}/builds"
-            with urllib.request.urlopen(
-                    urllib.request.Request(builds_url, headers=hdrs), timeout=15) as r2:
+            with urllib.request.urlopen(urllib.request.Request(builds_url, headers=hdrs), timeout=15) as r2:
                 bdata = json.loads(r2.read())
-            # builds is nested under "builds" key in v3
             builds = bdata.get("builds", bdata) if isinstance(bdata, dict) else bdata
-            if not builds:
-                return None, f"No builds found for Paper {ver}"
+            if not builds: return None, f"No builds found for Paper {ver}"
             stable = [b for b in builds if b.get("channel","").upper() == "STABLE"]
             chosen = stable[-1] if stable else builds[-1]
-            dl_url = chosen["downloads"]["server:default"]["url"]
-            return dl_url, ver
+            return chosen["downloads"]["server:default"]["url"], ver
         except Exception as ex:
             return None, str(ex)
 
     def _purpur_url(ver):
-        # Purpur API: https://api.purpurmc.org/v2/purpur
-        # → {"versions": [...]}  latest is last
-        # Download: https://api.purpurmc.org/v2/purpur/{ver}/latest/download
         try:
             with urllib.request.urlopen(
                     urllib.request.Request("https://api.purpurmc.org/v2/purpur",
-                                           headers={"User-Agent":"MC-CTRL/1.0"}),
-                    timeout=15) as r:
+                                           headers={"User-Agent":"MC-CTRL/1.0"}), timeout=15) as r:
                 data = json.loads(r.read())
             versions = data.get("versions", [])
-            if not versions:
-                return None, "No Purpur versions returned"
-            if ver == "latest":
-                ver = versions[-1]
-            elif ver not in versions:
-                return None, f"Purpur {ver} not found. Available: {', '.join(versions[-5:])}"
+            if not versions: return None, "No Purpur versions returned"
+            if ver == "latest": ver = versions[-1]
+            elif ver not in versions: return None, f"Purpur {ver} not found"
             return f"https://api.purpurmc.org/v2/purpur/{ver}/latest/download", ver
         except Exception as ex:
             return None, str(ex)
 
     def _vanilla_url(ver):
-        # Mojang version manifest
         MF = "https://launchermeta.mojang.com/mc/game/version_manifest_v2.json"
         try:
             with urllib.request.urlopen(MF, timeout=15) as r:
                 mf = json.loads(r.read())
-            if ver == "latest":
-                ver = mf["latest"]["release"]
-            vi = next((v for v in mf["versions"]
-                        if v["id"] == ver and v["type"] == "release"), None)
-            if not vi:
-                return None, f"Vanilla release {ver} not found"
+            if ver == "latest": ver = mf["latest"]["release"]
+            vi = next((v for v in mf["versions"] if v["id"]==ver and v["type"]=="release"), None)
+            if not vi: return None, f"Vanilla release {ver} not found"
             with urllib.request.urlopen(vi["url"], timeout=15) as r2:
                 vd = json.loads(r2.read())
             srv = vd.get("downloads", {}).get("server")
-            if not srv:
-                return None, f"No server download for {ver}"
+            if not srv: return None, f"No server download for {ver}"
             return srv["url"], ver
         except Exception as ex:
             return None, str(ex)
@@ -2466,59 +2063,130 @@ def _build_world_creation_section(scroll):
         if server_proc and server_proc.poll() is None:
             app.after(0, show_toast, "Stop the server first!", T["stop"])
             app.after(0, _set_st, "Stop the server first.", T["stop"], 0); return
-        app.after(0, _set_st, "Resolving download URL...", T["sync"], 0.05)
+
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+        # ── Step 1: resolve download URL ──────────────────
+        app.after(0, _set_st, "Resolving download URL...", T["sync"], 0.02)
+        jar_dest   = os.path.join(path, "server.jar")
+        jar_backup = os.path.join(path, f"server_bak_{ts}.jar")
+        jar_tmp    = os.path.join(path, f"server_download_{ts}.jar.tmp")
+
         if sw != "Fabric (manual)":
             if sw == "Paper":    url, resolved = _paper_url(mc_v)
             elif sw == "Purpur": url, resolved = _purpur_url(mc_v)
             else:                url, resolved = _vanilla_url(mc_v)
             if not url:
-                app.after(0, _set_st, f"Could not resolve: {resolved}", T["stop"], 0)
+                app.after(0, _set_st, f"Could not resolve URL: {resolved}", T["stop"], 0)
                 app.after(0, show_toast, "URL fetch failed.", T["stop"]); return
-            app.after(0, log, f"  Downloading {sw} {resolved}...")
-            jar_dest = os.path.join(path, "server.jar")
-            if not _dl(url, jar_dest, f"{sw} {resolved}"):
-                app.after(0, show_toast, "Download failed.", T["stop"]); return
-            app.after(0, log, f"  JAR saved -> {jar_dest}")
-        else:
-            app.after(0, _set_st, "Fabric: install manually.", T["muted"], 0)
+
+            # ── Step 2: backup existing server.jar ────────
+            if os.path.exists(jar_dest):
+                try:
+                    shutil.copy2(jar_dest, jar_backup)
+                    app.after(0, log, f"  Backed up existing server.jar → server_bak_{ts}.jar")
+                except Exception as ex:
+                    app.after(0, _set_st, f"Could not back up server.jar: {ex}", T["stop"], 0)
+                    app.after(0, show_toast, "Backup failed — aborting for safety.", T["stop"])
+                    return   # hard stop — never risk losing the JAR without a backup
+
+            # ── Step 3: download to a temp file ───────────
+            app.after(0, _set_st, f"Downloading {sw} {resolved}...", T["sync"], 0.05)
+            if not _dl(url, jar_tmp, f"{sw} {resolved}"):
+                # Download failed — temp file may be corrupt/partial; delete it
+                try: os.remove(jar_tmp)
+                except: pass
+                # Restore backup if we had one
+                if os.path.exists(jar_backup) and not os.path.exists(jar_dest):
+                    try:
+                        shutil.copy2(jar_backup, jar_dest)
+                        app.after(0, log, "  Restored server.jar from backup after failed download.")
+                    except: pass
+                app.after(0, show_toast, "Download failed — original JAR preserved.", T["stop"])
+                return
+
+            # ── Step 4: verify temp file is not empty ─────
+            tmp_size = os.path.getsize(jar_tmp) if os.path.exists(jar_tmp) else 0
+            if tmp_size < 1_000_000:   # anything under 1 MB is definitely corrupt
+                try: os.remove(jar_tmp)
+                except: pass
+                if os.path.exists(jar_backup) and not os.path.exists(jar_dest):
+                    try: shutil.copy2(jar_backup, jar_dest)
+                    except: pass
+                app.after(0, _set_st, f"Download corrupt ({tmp_size} bytes) — original JAR preserved.", T["stop"], 0)
+                app.after(0, show_toast, "Downloaded JAR looks corrupt — keeping original.", T["stop"], 7000)
+                return
+
+            # ── Step 5: atomic replace ────────────────────
+            try:
+                if os.path.exists(jar_dest):
+                    os.remove(jar_dest)
+                os.rename(jar_tmp, jar_dest)
+                app.after(0, log, f"  server.jar updated successfully ({tmp_size // 1048576} MB).")
+            except Exception as ex:
+                # Rename failed — try to restore
+                try: os.remove(jar_tmp)
+                except: pass
+                if os.path.exists(jar_backup):
+                    try:
+                        shutil.copy2(jar_backup, jar_dest)
+                        app.after(0, log, "  Restored server.jar from backup after replace error.")
+                    except: pass
+                app.after(0, _set_st, f"Replace failed: {ex}", T["stop"], 0)
+                app.after(0, show_toast, f"JAR replace failed — original restored.", T["stop"])
+                return
+
+        # ── Step 6: eula.txt ──────────────────────────────
         try:
             with open(os.path.join(path,"eula.txt"),"w") as ef: ef.write("eula=true\n")
-            app.after(0, log, "  eula.txt accepted.")
         except: pass
-        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-        for fld in [wname,f"{wname}_nether",f"{wname}_the_end","world","world_nether","world_the_end"]:
+
+        # ── Step 7: backup then delete old world folders ──
+        app.after(0, _set_st, "Backing up existing world folders...", T["sync"], 0.85)
+        for fld in [wname, f"{wname}_nether", f"{wname}_the_end",
+                    "world", "world_nether", "world_the_end"]:
             fp = os.path.join(path, fld)
             if os.path.isdir(fp):
-                try: shutil.copytree(fp,f"{fp}_bak_{ts}"); app.after(0,log,f"  Backed up: {fld}")
-                except Exception as ex: app.after(0,log,f"  Backup err {fld}: {ex}")
-        for fld in [wname,f"{wname}_nether",f"{wname}_the_end"]:
+                bak = f"{fp}_bak_{ts}"
+                try:
+                    shutil.copytree(fp, bak)
+                    app.after(0, log, f"  Backed up: {fld} → {os.path.basename(bak)}")
+                except Exception as ex:
+                    app.after(0, log, f"  Warning: could not back up {fld}: {ex}")
+        for fld in [wname, f"{wname}_nether", f"{wname}_the_end"]:
             fp = os.path.join(path, fld)
             if os.path.isdir(fp):
-                try: shutil.rmtree(fp); app.after(0,log,f"  Deleted old: {fld}")
-                except Exception as ex: app.after(0,log,f"  Delete err: {ex}")
-        prop_file = os.path.join(path,"server.properties")
-        patches = {"level-name":wname,"level-seed":seed,"level-type":level_type_var.get(),
-                   "gamemode":gamemode_var.get(),"difficulty":diff_var.get(),
+                try: shutil.rmtree(fp)
+                except Exception as ex: app.after(0, log, f"  Delete error {fld}: {ex}")
+
+        # ── Step 8: patch server.properties ──────────────
+        prop_file = os.path.join(path, "server.properties")
+        patches = {"level-name":wname, "level-seed":seed,
+                   "level-type":level_type_var.get(),
+                   "gamemode":gamemode_var.get(), "difficulty":diff_var.get(),
                    "hardcore":str(hardcore_var.get()).lower(),
                    "generate-structures":str(structures_var.get()).lower()}
         try:
-            lines_in = open(prop_file,encoding="utf-8").readlines() if os.path.exists(prop_file) else []
-            new_lines=[]; written=set()
+            lines_in = open(prop_file, encoding="utf-8").readlines() if os.path.exists(prop_file) else []
+            new_lines = []; written = set()
             for line in lines_in:
-                s2=line.strip()
+                s2 = line.strip()
                 if s2.startswith("#") or "=" not in s2: new_lines.append(line); continue
-                k=s2.split("=",1)[0].strip()
+                k = s2.split("=",1)[0].strip()
                 if k in patches: new_lines.append(f"{k}={patches[k]}\n"); written.add(k)
                 else: new_lines.append(line)
-            for k,v in patches.items():
+            for k, v in patches.items():
                 if k not in written: new_lines.append(f"{k}={v}\n")
-            open(prop_file,"w",encoding="utf-8").writelines(new_lines)
-            app.after(0,log,"  server.properties updated.")
+            open(prop_file, "w", encoding="utf-8").writelines(new_lines)
+            app.after(0, log, "  server.properties updated.")
         except Exception as ex:
-            app.after(0,_set_st,f"Properties error: {ex}",T["stop"],0); return
-        app.after(0,_set_st,f"Done! Start the server to generate world '{wname}'.",T["start"],1.0)
-        app.after(0,show_toast,f"World '{wname}' configured!",T["start"])
-        app.after(0,log,f"-- World creation done: {sw} '{wname}' seed='{seed or 'random'}' --")
+            app.after(0, _set_st, f"Properties error: {ex}", T["stop"], 0); return
+
+        backup_note = f"  (old JAR backed up as server_bak_{ts}.jar)" if os.path.exists(jar_backup) else ""
+        app.after(0, _set_st,
+                  f"Done! Start the server to generate world '{wname}'.{backup_note}",
+                  T["start"], 1.0)
+        app.after(0, show_toast, f"World '{wname}' configured!", T["start"])
 
     ctk.CTkButton(wch, text="Download & Create World", height=28, corner_radius=6,
                   font=ctk.CTkFont(size=11, weight="bold"),
@@ -2530,6 +2198,9 @@ def _build_world_creation_section(scroll):
 def _load_addon(path):
     global _loaded_addons
     name = os.path.splitext(os.path.basename(path))[0]
+    if name in _disabled_addons:
+        log(f"  Addon skipped (disabled): {name}")
+        return
     try:
         spec = importlib.util.spec_from_file_location(name, path)
         mod  = importlib.util.module_from_spec(spec)
@@ -2574,6 +2245,7 @@ def setup(ctx):
             if s.endswith(".py"):
                 _load_addon(os.path.join(addon_dir, s))
     except: pass
+
 
 # ── playit.gg tab ──────────────────────────────────────────
 def build_playit_tab(parent):
@@ -2653,21 +2325,19 @@ def build_playit_tab(parent):
                   command=_dl_playit).pack(side="left")
     pt_status_lbl.pack(anchor="w", pady=(4,0))
 
-    # Agent secret key (for users who already have an account)
     ctk.CTkFrame(sb, height=1, fg_color=T["border"]).pack(fill="x", pady=(8,6))
     ctk.CTkLabel(sb, text="Already have a playit.gg account?",
-                 font=ctk.CTkFont(size=11, weight="bold"),
-                 text_color=T["text"]).pack(anchor="w")
+                 font=ctk.CTkFont(size=11, weight="bold"), text_color=T["text"]).pack(anchor="w")
     ctk.CTkLabel(sb, text=(
         "If you've already set up the agent and have your secret key, paste it below.\n"
-        "The agent will use it automatically on next start — no browser claim needed."
+        "The agent will use it automatically on next start."
     ), font=ctk.CTkFont(size=10), text_color=T["muted"]).pack(anchor="w", pady=(2,4))
 
     key_row = ctk.CTkFrame(sb, fg_color="transparent"); key_row.pack(fill="x", pady=(0,4))
     ctk.CTkLabel(key_row, text="Secret Key", font=ctk.CTkFont(size=11),
                  text_color=T["text"], width=90, anchor="w").pack(side="left")
-    _s = load_settings()
-    playit_key_var = ctk.StringVar(value=_s.get("playit_secret_key",""))
+    _s2 = load_settings()
+    playit_key_var = ctk.StringVar(value=_s2.get("playit_secret_key",""))
     key_entry = ctk.CTkEntry(key_row, textvariable=playit_key_var, height=28,
                               font=ctk.CTkFont(size=11, family="Consolas"),
                               fg_color=T["bg"], border_color=T["border"],
@@ -2685,20 +2355,16 @@ def build_playit_tab(parent):
                              text_color=T["muted"], hover_color=T["border"],
                              command=_toggle_key_vis)
     vis_btn.pack(side="left")
-
-    def _save_key(*_):
-        update_setting("playit_secret_key", playit_key_var.get().strip())
+    def _save_key(*_): update_setting("playit_secret_key", playit_key_var.get().strip())
     playit_key_var.trace_add("write", _save_key)
 
     def _open_claim_link():
-        import webbrowser
-        webbrowser.open("https://playit.gg/login")
+        import webbrowser; webbrowser.open("https://playit.gg/login")
     ctk.CTkButton(sb, text="Open playit.gg to get your key →", height=26,
                   font=ctk.CTkFont(size=10), fg_color="transparent",
                   border_width=1, border_color=T["sync"],
                   text_color=T["sync"], hover_color=T["border"],
                   command=_open_claim_link).pack(anchor="w", pady=(0,4))
-
     ctk.CTkLabel(sb, text="First run without a key: a claim URL appears in the agent log below.",
                  font=ctk.CTkFont(size=10), text_color=T["muted"]).pack(anchor="w")
 
@@ -2717,35 +2383,28 @@ def build_playit_tab(parent):
             tun_addr.configure(text=addr or "")
             if addr: show_toast(f"Tunnel: {addr}", T["start"])
         except: pass
-    # ── Batched, throttled log writer ─────────────────────────────
-    # Lines from background threads accumulate in _PT_LOG_QUEUE.
-    # A single recurring app.after() drains them at most every 120ms,
-    # so fast bursts never schedule hundreds of individual UI updates.
+
     _PT_LOG_QUEUE    = []
     _PT_LOG_MAXLINES = 300
     _PT_FLUSH_MS     = 120
     _pt_flush_pending = [False]
-
     _ansi_re  = re.compile(r'\x1b(?:\[[0-9;]*[mABCDEFGHJKSTfhilmnprsuu]|\][^\x07]*\x07|[()][AB012]|[=>])')
     _coord_re = re.compile(r'\x1b\[\d+;\d+H')
 
     def _flush_ptlog():
         _pt_flush_pending[0] = False
-        if not _PT_LOG_QUEUE:
-            return
+        if not _PT_LOG_QUEUE: return
         batch = _PT_LOG_QUEUE[:]
         _PT_LOG_QUEUE.clear()
         try:
             pt_log.configure(state="normal")
             pt_log.insert("end", "\n".join(batch) + "\n")
-            # Keep widget trimmed — one bulk delete instead of per-line
             total = int(pt_log.index("end-1c").split(".")[0])
             if total > _PT_LOG_MAXLINES:
                 pt_log.delete("1.0", f"{total - _PT_LOG_MAXLINES}.0")
             pt_log.configure(state="disabled")
             pt_log.see("end")
-        except Exception:
-            pass
+        except: pass
 
     def _append_ptlog(line):
         _PT_LOG_QUEUE.append(line)
@@ -2754,20 +2413,15 @@ def build_playit_tab(parent):
             app.after(_PT_FLUSH_MS, _flush_ptlog)
 
     def _handle_line(raw_bytes, prefix=""):
-        try:
-            line = raw_bytes.decode("utf-8", errors="replace").rstrip()
-        except Exception:
-            line = repr(raw_bytes)
+        try: line = raw_bytes.decode("utf-8", errors="replace").rstrip()
+        except: line = repr(raw_bytes)
         clean = _ansi_re.sub("", _coord_re.sub(" ", line)).strip()
-        if not clean:
-            return
+        if not clean: return
         tagged = f"{prefix}{clean}" if prefix else clean
         playit_log_lines.append(tagged)
-        if len(playit_log_lines) > 300:
-            del playit_log_lines[:150]   # drop oldest half in one shot
+        if len(playit_log_lines) > 300: del playit_log_lines[:150]
         m = _playit_addr_re.search(clean) or _playit_arrow_re.search(clean)
-        if m:
-            app.after(0, _set_addr, m.group(1))
+        if m: app.after(0, _set_addr, m.group(1))
         cm = _playit_claim_re.search(clean)
         if cm:
             url = cm.group(1)
@@ -2778,42 +2432,28 @@ def build_playit_tab(parent):
     def _read_stream_bytes(stream, prefix=""):
         try:
             for raw in iter(stream.readline, b""):
-                if not raw:
-                    break
+                if not raw: break
                 _handle_line(raw, prefix)
-        except Exception:
-            pass
+        except: pass
 
     def _read_pt(proc):
         _read_stream_bytes(proc.stdout, "")
         code = proc.wait()
-        if code == 0:
-            msg = "[MC CTRL] Agent exited cleanly."
-        else:
-            msg = (f"[MC CTRL] Agent exited with code {code}. "
-                   "If your secret key is wrong, clear it and restart — "
-                   "a claim URL will appear for first-time setup.")
+        msg = "[MC CTRL] Agent exited cleanly." if code==0 else f"[MC CTRL] Agent exited with code {code}."
         app.after(0, _append_ptlog, msg)
         app.after(0, _set_tst, "● Stopped", T["stop"])
 
     def _read_stderr_pt(proc):
-        """Read stderr separately — playit prints errors here."""
         _read_stream_bytes(proc.stderr, "[stderr] ")
 
     def _watch_tunnel_toml(exe_path):
-        """
-        Fallback: poll TOML files and recent log lines for tunnel address.
-        playit writes %APPDATA%/playit/*.toml or next to the exe.
-        """
         import glob, time as _time
         appdata = os.environ.get("APPDATA", "")
         exe_dir = os.path.dirname(exe_path)
-        # Broader address pattern for TOML values
         toml_addr_re = re.compile(
             r'(?:address|host|tunnel|alloc)\s*=\s*["\']?((?:[\w\-]+\.)+(?:ply\.gg|playit\.gg)(?::\d+)?)',
             re.IGNORECASE)
         seen = set()
-
         def _scan_toml(path):
             try:
                 txt = open(path, encoding="utf-8", errors="ignore").read()
@@ -2822,31 +2462,22 @@ def build_playit_tab(parent):
                     if addr not in seen:
                         seen.add(addr)
                         app.after(0, _set_addr, addr)
-                        app.after(0, _append_ptlog,
-                                  f"[MC CTRL] Tunnel address from config: {addr}")
-            except Exception:
-                pass
-
+            except: pass
         def _scan_log_lines():
             for line in list(playit_log_lines):
                 m = _playit_addr_re.search(line)
                 if m:
                     addr = m.group(1)
                     if addr not in seen:
-                        seen.add(addr)
-                        app.after(0, _set_addr, addr)
-
-        for _ in range(120):   # poll for up to 6 minutes
-            if not (playit_proc and playit_proc.poll() is None):
-                break
-            # Dynamically discover TOML files (playit may create them after start)
+                        seen.add(addr); app.after(0, _set_addr, addr)
+        for _ in range(120):
+            if not (playit_proc and playit_proc.poll() is None): break
             toml_files = []
             if appdata:
                 toml_files += glob.glob(os.path.join(appdata, "playit", "*.toml"))
                 toml_files += glob.glob(os.path.join(appdata, "playit", "**", "*.toml"), recursive=True)
             toml_files += glob.glob(os.path.join(exe_dir, "*.toml"))
-            for p in toml_files:
-                _scan_toml(p)
+            for p in toml_files: _scan_toml(p)
             _scan_log_lines()
             _time.sleep(3)
 
@@ -2857,88 +2488,52 @@ def build_playit_tab(parent):
             show_toast("Set playit.exe path first!", T["stop"]); return
         if playit_proc and playit_proc.poll() is None:
             show_toast("Already running.", T["muted"]); return
-
-        # Inject secret key into playit's TOML config (the only reliable method).
-        # playit reads %APPDATA%\playit\playit.toml  →  secret_key = "..."
-        # We patch that file before launching so no CLI flags are needed.
         saved_key = load_settings().get("playit_secret_key", "").strip()
-        cmd = [exe]
-        env = os.environ.copy()
+        cmd = [exe]; env = os.environ.copy()
         if saved_key:
-            _injected_path = None
             try:
                 appdata = os.environ.get("APPDATA", "")
                 if appdata:
-                    pt_dir = os.path.join(appdata, "playit")
-                    os.makedirs(pt_dir, exist_ok=True)
+                    pt_dir = os.path.join(appdata, "playit"); os.makedirs(pt_dir, exist_ok=True)
                     toml_path = os.path.join(pt_dir, "playit.toml")
                     if os.path.exists(toml_path):
                         with open(toml_path, encoding="utf-8", errors="ignore") as _tf:
                             toml_lines = _tf.readlines()
-                        new_toml = []
-                        found_key = False
+                        new_toml = []; found_key = False
                         for _tl in toml_lines:
                             if _tl.strip().startswith("secret_key"):
-                                new_toml.append('secret_key = "' + saved_key + '"\n')
-                                found_key = True
-                            else:
-                                new_toml.append(_tl)
-                        if not found_key:
-                            new_toml.insert(0, 'secret_key = "' + saved_key + '"\n')
+                                new_toml.append('secret_key = "' + saved_key + '"\n'); found_key = True
+                            else: new_toml.append(_tl)
+                        if not found_key: new_toml.insert(0, 'secret_key = "' + saved_key + '"\n')
                     else:
                         new_toml = ['secret_key = "' + saved_key + '"\n']
                     with open(toml_path, "w", encoding="utf-8") as _tf:
                         _tf.writelines(new_toml)
-                    _injected_path = toml_path
-            except Exception:
-                pass
-            # Also write next to the exe as a fallback for portable installs
+            except: pass
             try:
                 exe_toml = os.path.join(os.path.dirname(exe), "playit.toml")
                 with open(exe_toml, "w") as _tf2:
                     _tf2.write('secret_key = "' + saved_key + '"\n')
-                if not _injected_path:
-                    _injected_path = exe_toml
-            except Exception:
-                pass
-            # Show what we actually wrote so user can verify
-            try:
-                _toml_preview = open(_injected_path, encoding="utf-8").read().strip()
-            except Exception:
-                _toml_preview = "(could not read)"
-            app.after(0, _append_ptlog,
-                      f"[MC CTRL] Secret key written to: {_injected_path}")
-            app.after(0, _append_ptlog,
-                      f"[MC CTRL] TOML contents: {_toml_preview}")
-
+            except: pass
         try:
-            # Hide console window; use unbuffered binary pipes so we get
-            # output immediately even though playit is not a tty.
             _si = subprocess.STARTUPINFO()
             _si.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-            _si.wShowWindow = 0   # SW_HIDE
+            _si.wShowWindow = 0
             playit_proc = subprocess.Popen(
-                cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,     # separate so we capture both
-                stdin=subprocess.DEVNULL,
-                text=False,                 # binary — we decode per-line ourselves
-                bufsize=0,                  # unbuffered — get lines immediately
+                cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                stdin=subprocess.DEVNULL, text=False, bufsize=0,
                 creationflags=subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW,
-                startupinfo=_si,
-                env=env,
-            )
+                startupinfo=_si, env=env)
             _set_tst("● Running", T["start"])
             log("-- playit.gg started --")
-            app.after(0, _append_ptlog,
-                      "[MC CTRL] Agent started. Waiting for tunnel address...")
-            # Read stdout and stderr on separate threads so neither blocks
+            app.after(0, _append_ptlog, "[MC CTRL] Agent started. Waiting for tunnel address...")
             threading.Thread(target=_read_pt,        args=(playit_proc,), daemon=True).start()
             threading.Thread(target=_read_stderr_pt, args=(playit_proc,), daemon=True).start()
             threading.Thread(target=_watch_tunnel_toml, args=(exe,),     daemon=True).start()
         except Exception as ex:
             show_toast(f"Failed to start playit: {ex}", T["stop"])
             _set_tst("● Error", T["stop"])
+
     def _stop_pt():
         global playit_proc, playit_tunnel
         if playit_proc:
@@ -2947,6 +2542,7 @@ def build_playit_tab(parent):
             playit_proc = None
         playit_tunnel = None; _set_addr(""); _set_tst("● Stopped", T["stop"])
         log("-- playit.gg stopped --")
+
     def _copy_addr():
         addr = tun_addr.cget("text")
         if addr: app.clipboard_clear(); app.clipboard_append(addr); show_toast(f"Copied: {addr}",T["sync"])
@@ -2967,21 +2563,15 @@ def build_playit_tab(parent):
     pt_log = ctk.CTkTextbox(lb, font=ctk.CTkFont(size=11,family="Consolas"),
                              wrap="word", state="disabled", height=220,
                              fg_color=T["bg"], text_color=T["text"]); pt_log.pack(fill="x")
-    # Restore log lines saved from before a theme rebuild
     if playit_log_lines:
         pt_log.configure(state="normal")
-        for _saved_line in playit_log_lines:
-            pt_log.insert("end", _saved_line + "\n")
-        pt_log.configure(state="disabled")
-        pt_log.see("end")
-    # If tunnel address already known, restore it
-    if playit_tunnel:
-        _set_addr(playit_tunnel)
+        for _saved_line in playit_log_lines: pt_log.insert("end", _saved_line + "\n")
+        pt_log.configure(state="disabled"); pt_log.see("end")
+    if playit_tunnel: _set_addr(playit_tunnel)
+
     def _clear_ptlog():
-        global playit_log_lines
-        playit_log_lines.clear()
-        pt_log.configure(state="normal")
-        pt_log.delete("1.0","end")
+        global playit_log_lines; playit_log_lines.clear()
+        pt_log.configure(state="normal"); pt_log.delete("1.0","end")
         pt_log.configure(state="disabled")
     ctk.CTkButton(lh,text="Clear",width=58,height=22,font=ctk.CTkFont(size=10),
                   fg_color="transparent",border_width=1,border_color=T["border"],
@@ -2998,129 +2588,26 @@ def build_playit_tab(parent):
                   text_color=T["muted"],hover_color=T["border"],
                   command=_copy_ptlog).pack(side="right", padx=(0,4))
 
-    gb, _ = _card("Setup Guide")
-
-    def _step(parent, num, title, body, tip=None):
-        sf = ctk.CTkFrame(parent, fg_color=T["bg"], border_color=T["border"],
-                          border_width=1, corner_radius=8)
-        sf.pack(fill="x", pady=(0, 8))
-        nb = ctk.CTkFrame(sf, fg_color=T["sync"], width=28, height=28, corner_radius=14)
-        nb.pack(side="left", anchor="n", padx=(12, 10), pady=12)
-        nb.pack_propagate(False)
-        ctk.CTkLabel(nb, text=str(num), font=ctk.CTkFont(size=12, weight="bold"),
-                     text_color="#000000").place(relx=0.5, rely=0.5, anchor="center")
-        tb = ctk.CTkFrame(sf, fg_color="transparent")
-        tb.pack(side="left", fill="x", expand=True, pady=10, padx=(0, 12))
-        ctk.CTkLabel(tb, text=title, font=ctk.CTkFont(size=12, weight="bold"),
-                     text_color=T["text"], anchor="w").pack(anchor="w")
-        ctk.CTkLabel(tb, text=body, font=ctk.CTkFont(size=11),
-                     text_color=T["muted"], justify="left",
-                     wraplength=680, anchor="w").pack(anchor="w", pady=(2, 0))
-        if tip:
-            tf = ctk.CTkFrame(tb, fg_color=T["card"], corner_radius=6)
-            tf.pack(anchor="w", fill="x", pady=(6, 0))
-            ctk.CTkLabel(tf, text=f"\U0001f4a1  {tip}", font=ctk.CTkFont(size=10),
-                         text_color=T["sync"], justify="left",
-                         wraplength=660, anchor="w").pack(padx=10, pady=6)
-
-    _step(gb, 1,
-          "Download the playit agent",
-          "Click the  \u2b07 Auto-Download  button in the Setup card above. It fetches the latest\n"
-          "playit-windows.exe directly from GitHub and saves it next to launcher.pyw.\n"
-          "You can also point to an existing playit.exe using Browse.",
-          "Only do this once \u2014 the same exe works forever, it updates itself automatically.")
-
-    _step(gb, 2,
-          "Start the agent",
-          "Click  \u25b6 Start  in the Tunnel Control card. The status dot turns green\n"
-          "and the Agent Log starts filling with output from playit.",
-          "Start the agent before or at the same time as your Minecraft server.")
-
-    _step(gb, 3,
-          "Claim your account (first run only)",
-          "On the very first run playit doesn't know who you are yet. Look in the Agent Log\n"
-          "for a line like:\n\n"
-          "      visit https://playit.gg/claim/xxxxxxxxxxxxxxxx to setup your agent\n\n"
-          "Open that URL in your browser, sign in or create a free account, and click\n"
-          "Continue. This links the agent on your PC to your playit.gg account.\n"
-          "You only ever need to do this once.",
-          "The claim URL is unique to this installation. Don't share it with anyone.")
-
-    _step(gb, 4,
-          "Wait for the tunnel address",
-          "After claiming, playit.gg automatically creates a Minecraft tunnel.\n"
-          "Within a few seconds the address (something like  xxxxx.at.ply.gg) appears\n"
-          "in big text next to the status dot.\n"
-          "Click  Copy Address  to copy it to your clipboard.",
-          "If the address doesn't appear after 30 seconds, stop and restart the agent.")
-
-    _step(gb, 5,
-          "Share with your friends",
-          "Give the address to your friends. They open Minecraft \u2192\n"
-          "Multiplayer \u2192 Add Server (or Direct Connect) and paste it exactly as shown.\n"
-          "No port number is needed \u2014 playit routes port 25565 automatically.",
-          "Friends don't need a playit account. Only you (the host) need one.")
-
-    _step(gb, 6,
-          "Stop the tunnel when done",
-          "Click  \u25a0 Stop  when you're finished. The tunnel goes offline immediately.\n"
-          "Next session, click  \u25b6 Start  again \u2014 the same address comes back.",
-          None)
-
-    faq_f = ctk.CTkFrame(gb, fg_color=T["card"], border_color=T["border"],
-                          border_width=1, corner_radius=8)
-    faq_f.pack(fill="x", pady=(4, 0))
-    ctk.CTkLabel(faq_f, text="Troubleshooting",
-                 font=ctk.CTkFont(size=11, weight="bold"),
-                 text_color=T["text"]).pack(anchor="w", padx=14, pady=(10, 4))
-    ctk.CTkFrame(faq_f, height=1, fg_color=T["border"]).pack(fill="x", padx=14)
-    ctk.CTkLabel(faq_f, text=(
-        "Friends can't connect?   \u2192   Make sure your MC server is running AND \u25b6 Start is active.\n"
-        "No address appears?      \u2192   Check the Agent Log for errors; try Stop then Start again.\n"
-        "Claim URL missing?       \u2192   The agent may already be claimed. Check playit.gg \u2192 Agents.\n"
-        "Address keeps changing?  \u2192   Free plan addresses are persistent \u2014 they don't change.\n"
-        "Lag / high ping?         \u2192   Upgrade to Premium ($3/mo) to pick a nearby server region.\n"
-        "Port already in use?     \u2192   Make sure no other playit instance is already running."
-    ), font=ctk.CTkFont(size=11), text_color=T["muted"],
-       justify="left", wraplength=820).pack(anchor="w", padx=14, pady=(8, 12))
-
     ctk.CTkFrame(scroll, height=12, fg_color="transparent").pack()
 
-# ── MULTI CTRL tab ────────────────────────────────────────
-# Up to 3 independent server columns, each with its own
-# path input, log, start/stop buttons.
-# A shared chat bar at the bottom sends to whichever server
-# is selected.
 
-_mc_servers = {}   # slot (0,1,2) -> {proc, stdin, pid, log_box, path_var, ...}
+# ── MULTI CTRL tab ─────────────────────────────────────────
+_mc_servers = {}
 
 def build_multictrl_tab(parent):
     global _mc_servers
-
     MAX_SLOTS = 3
-    # Slot state
     slots = {}
     for i in range(MAX_SLOTS):
-        slots[i] = {
-            "proc":     None,
-            "stdin":    None,
-            "path_var": ctk.StringVar(value=""),
-            "log_box":  None,
-            "status":   None,   # label widget
-            "running":  False,
-        }
+        slots[i] = {"proc":None,"stdin":None,"path_var":ctk.StringVar(value=""),
+                    "log_box":None,"status":None,"running":False}
     _mc_servers = slots
 
-    # ── Layout: top toolbar + columns + shared chat ────────
-    parent.rowconfigure(0, weight=0)
-    parent.rowconfigure(1, weight=1)
-    parent.rowconfigure(2, weight=0)
+    parent.rowconfigure(0, weight=0); parent.rowconfigure(1, weight=1); parent.rowconfigure(2, weight=0)
     parent.columnconfigure(0, weight=1)
 
-    # ── Top toolbar ────────────────────────────────────────
-    toolbar = ctk.CTkFrame(parent, fg_color=T["card"],
-                            border_color=T["border"], border_width=1,
-                            corner_radius=0)
+    toolbar = ctk.CTkFrame(parent, fg_color=T["card"], border_color=T["border"],
+                            border_width=1, corner_radius=0)
     toolbar.grid(row=0, column=0, sticky="ew")
     ctk.CTkLabel(toolbar, text="⊞  MULTI CTRL",
                  font=ctk.CTkFont(size=13, weight="bold"),
@@ -3128,22 +2615,17 @@ def build_multictrl_tab(parent):
     ctk.CTkLabel(toolbar, text="— control up to 3 servers simultaneously",
                  font=ctk.CTkFont(size=10), text_color=T["muted"]).pack(side="left")
 
-    # ── Column area ────────────────────────────────────────
     col_area = ctk.CTkFrame(parent, fg_color="transparent")
     col_area.grid(row=1, column=0, sticky="nsew", padx=4, pady=4)
-    for i in range(MAX_SLOTS):
-        col_area.columnconfigure(i, weight=1, uniform="col")
+    for i in range(MAX_SLOTS): col_area.columnconfigure(i, weight=1, uniform="col")
     col_area.rowconfigure(0, weight=1)
 
     def _mc_log(slot, msg):
-        """Append msg to slot's log box (call from any thread via app.after)."""
         lb = slots[slot]["log_box"]
         if lb is None: return
         try:
-            lb.configure(state="normal")
-            lb.insert("end", msg + "\n")
-            lb.configure(state="disabled")
-            lb.see("end")
+            lb.configure(state="normal"); lb.insert("end", msg + "\n")
+            lb.configure(state="disabled"); lb.see("end")
         except: pass
 
     def _mc_set_status(slot, txt, color):
@@ -3157,190 +2639,136 @@ def build_multictrl_tab(parent):
             if not raw: break
             app.after(0, _mc_log, slot, raw.rstrip())
         app.after(0, _mc_set_status, slot, "● Stopped", T["stop"])
-        slots[slot]["running"] = False
-        slots[slot]["proc"]    = None
-        slots[slot]["stdin"]   = None
+        slots[slot]["running"] = False; slots[slot]["proc"] = None; slots[slot]["stdin"] = None
 
     def _mc_start(slot):
         path = slots[slot]["path_var"].get().strip()
         if not path or not os.path.isdir(path):
-            show_toast(f"Server {slot+1}: set a valid world/server folder first.", T["stop"])
-            return
+            show_toast(f"Server {slot+1}: set a valid folder first.", T["stop"]); return
         if slots[slot]["running"]:
             show_toast(f"Server {slot+1} is already running.", T["muted"]); return
-        s = load_settings()
-        java = s.get("java_path", JAVA_PATH)
-        jar  = os.path.join(path, "server.jar")
+        s = load_settings(); java = s.get("java_path", JAVA_PATH)
+        jar = os.path.join(path, "server.jar")
         if not os.path.exists(jar):
-            show_toast(f"Server {slot+1}: no server.jar found in that folder.", T["stop"])
-            return
-        # EULA check
+            show_toast(f"Server {slot+1}: no server.jar found.", T["stop"]); return
         if not _check_eula(path): return
         try:
-            cmd = [java,
-                   "-Xms512M", "-Xmx2G",
-                   "-XX:+UseG1GC",
-                   "-jar", jar, "--nogui"]
-            proc = subprocess.Popen(
-                cmd, cwd=path,
-                stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT, text=True, bufsize=1,
-                creationflags=CREATE_NO_WINDOW)
-            slots[slot]["proc"]    = proc
-            slots[slot]["stdin"]   = proc.stdin
+            cmd = [java,"-Xms512M","-Xmx2G","-XX:+UseG1GC","-jar",jar,"--nogui"]
+            proc = subprocess.Popen(cmd, cwd=path, stdin=subprocess.PIPE,
+                                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                    text=True, bufsize=1, creationflags=CREATE_NO_WINDOW)
+            slots[slot]["proc"] = proc; slots[slot]["stdin"] = proc.stdin
             slots[slot]["running"] = True
             _mc_set_status(slot, "● Running", T["start"])
             app.after(0, _mc_log, slot, f"-- Server {slot+1} started --")
-            threading.Thread(target=_mc_read_output, args=(slot, proc),
-                             daemon=True).start()
+            threading.Thread(target=_mc_read_output, args=(slot, proc), daemon=True).start()
         except Exception as ex:
             show_toast(f"Server {slot+1} failed: {ex}", T["stop"])
 
     def _mc_stop(slot):
         proc = slots[slot]["proc"]
         if proc:
-            try:
-                slots[slot]["stdin"].write("stop\n")
-                slots[slot]["stdin"].flush()
+            try: slots[slot]["stdin"].write("stop\n"); slots[slot]["stdin"].flush()
             except: pass
             app.after(3000, lambda p=proc: p.terminate() if p.poll() is None else None)
-        slots[slot]["running"] = False
-        slots[slot]["proc"]    = None
-        slots[slot]["stdin"]   = None
+        slots[slot]["running"] = False; slots[slot]["proc"] = None; slots[slot]["stdin"] = None
         _mc_set_status(slot, "● Stopped", T["stop"])
         app.after(0, _mc_log, slot, f"-- Server {slot+1} stopped --")
 
-    # ── Build each column ──────────────────────────────────
     for i in range(MAX_SLOTS):
-        col = ctk.CTkFrame(col_area, fg_color=T["card"],
-                           border_color=T["border"], border_width=1,
-                           corner_radius=10)
+        col = ctk.CTkFrame(col_area, fg_color=T["card"], border_color=T["border"],
+                           border_width=1, corner_radius=10)
         col.grid(row=0, column=i, sticky="nsew", padx=4, pady=0)
-        col.rowconfigure(2, weight=1)
-        col.columnconfigure(0, weight=1)
+        col.rowconfigure(2, weight=1); col.columnconfigure(0, weight=1)
 
-        # ── Header ────────────────────────────────────────
         hdr = ctk.CTkFrame(col, fg_color=T["bg"], corner_radius=8)
         hdr.grid(row=0, column=0, sticky="ew", padx=8, pady=(8,4))
-
         ctk.CTkLabel(hdr, text=f"Server {i+1}",
                      font=ctk.CTkFont(size=12, weight="bold"),
                      text_color=T["text"]).pack(side="left", padx=10, pady=6)
         st_lbl = ctk.CTkLabel(hdr, text="● Stopped",
-                               font=ctk.CTkFont(size=11, weight="bold"),
-                               text_color=T["stop"])
+                               font=ctk.CTkFont(size=11, weight="bold"), text_color=T["stop"])
         st_lbl.pack(side="right", padx=10)
         slots[i]["status"] = st_lbl
 
-        # ── Path input ────────────────────────────────────
         path_frame = ctk.CTkFrame(col, fg_color="transparent")
         path_frame.grid(row=1, column=0, sticky="ew", padx=8, pady=(0,4))
         path_frame.columnconfigure(0, weight=1)
 
-        path_entry = ctk.CTkEntry(path_frame,
-                                   textvariable=slots[i]["path_var"],
-                                   height=28,
-                                   font=ctk.CTkFont(size=10, family="Consolas"),
+        path_entry = ctk.CTkEntry(path_frame, textvariable=slots[i]["path_var"],
+                                   height=28, font=ctk.CTkFont(size=10, family="Consolas"),
                                    fg_color=T["bg"], border_color=T["border"],
-                                   text_color=T["text"],
-                                   placeholder_text=f"Server {i+1} folder path…")
+                                   text_color=T["text"], placeholder_text=f"Server {i+1} folder path…")
         path_entry.grid(row=0, column=0, sticky="ew", padx=(0,4))
 
         def _browse_mc(slot=i):
-            import tkinter.filedialog as fd
-            p = fd.askdirectory(title=f"Select Server {slot+1} Folder")
+            p = _tk_fd.askdirectory(title=f"Select Server {slot+1} Folder")
             if p: slots[slot]["path_var"].set(p)
 
         ctk.CTkButton(path_frame, text="…", width=28, height=28,
                       font=ctk.CTkFont(size=11), corner_radius=6,
-                      fg_color=T["bg"], border_width=1,
-                      border_color=T["border"], text_color=T["muted"],
-                      hover_color=T["border"],
-                      command=lambda s=i: _browse_mc(s)
-                      ).grid(row=0, column=1)
+                      fg_color=T["bg"], border_width=1, border_color=T["border"],
+                      text_color=T["muted"], hover_color=T["border"],
+                      command=lambda s=i: _browse_mc(s)).grid(row=0, column=1)
 
-        # ── Start / Stop buttons ──────────────────────────
         btn_row = ctk.CTkFrame(path_frame, fg_color="transparent")
         btn_row.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(4,0))
-        ctk.CTkButton(btn_row, text="▶ Start", height=26,
-                      font=ctk.CTkFont(size=11),
-                      fg_color=T["start"], hover_color=T["start"],
-                      text_color="#000",
+        ctk.CTkButton(btn_row, text="▶ Start", height=26, font=ctk.CTkFont(size=11),
+                      fg_color=T["start"], hover_color=T["start"], text_color="#000",
                       command=lambda s=i: threading.Thread(
                           target=_mc_start, args=(s,), daemon=True).start()
                       ).pack(side="left", expand=True, fill="x", padx=(0,3))
-        ctk.CTkButton(btn_row, text="■ Stop", height=26,
-                      font=ctk.CTkFont(size=11),
-                      fg_color=T["stop"], hover_color=T["stop"],
-                      text_color="#fff",
+        ctk.CTkButton(btn_row, text="■ Stop", height=26, font=ctk.CTkFont(size=11),
+                      fg_color=T["stop"], hover_color=T["stop"], text_color="#fff",
                       command=lambda s=i: _mc_stop(s)
                       ).pack(side="left", expand=True, fill="x", padx=(3,0))
 
-        # ── Log box ───────────────────────────────────────
-        lb = ctk.CTkTextbox(col,
-                             font=ctk.CTkFont(size=10, family="Consolas"),
-                             wrap="word", state="disabled",
-                             fg_color=T["bg"], text_color=T["text"])
+        lb = ctk.CTkTextbox(col, font=ctk.CTkFont(size=10, family="Consolas"),
+                             wrap="word", state="disabled", fg_color=T["bg"], text_color=T["text"])
         lb.grid(row=2, column=0, sticky="nsew", padx=8, pady=(0,8))
         slots[i]["log_box"] = lb
 
-    # ── Shared chat bar ────────────────────────────────────
-    chat_bar = ctk.CTkFrame(parent, fg_color=T["card"],
-                             border_color=T["border"], border_width=1,
-                             corner_radius=0)
+    chat_bar = ctk.CTkFrame(parent, fg_color=T["card"], border_color=T["border"],
+                             border_width=1, corner_radius=0)
     chat_bar.grid(row=2, column=0, sticky="ew", padx=0, pady=0)
-    chat_bar.columnconfigure(1, weight=1)
-
-    # Target selector
-    target_var = ctk.StringVar(value="Server 1")
-    ctk.CTkLabel(chat_bar, text="Send to:",
-                 font=ctk.CTkFont(size=11), text_color=T["muted"]
-                 ).grid(row=0, column=0, padx=(10,4), pady=8)
-    target_menu = ctk.CTkOptionMenu(
-        chat_bar,
-        values=["Server 1", "Server 2", "Server 3", "All Servers"],
-        variable=target_var,
-        font=ctk.CTkFont(size=11), width=120, height=30,
-        fg_color=T["bg"], button_color=T["border"],
-        button_hover_color=T["muted"], text_color=T["text"],
-        dropdown_fg_color=T["card"], dropdown_text_color=T["text"],
-        dropdown_hover_color=T["border"])
-    target_menu.grid(row=0, column=1, padx=(0,6), pady=8, sticky="w")
-
-    cmd_entry = ctk.CTkEntry(chat_bar, height=30,
-                              font=ctk.CTkFont(size=12),
-                              fg_color=T["bg"], border_color=T["border"],
-                              text_color=T["text"],
-                              placeholder_text="command or chat…")
-    cmd_entry.grid(row=0, column=2, sticky="ew", padx=(0,6), pady=8)
     chat_bar.columnconfigure(2, weight=1)
 
+    target_var = ctk.StringVar(value="Server 1")
+    ctk.CTkLabel(chat_bar, text="Send to:", font=ctk.CTkFont(size=11),
+                 text_color=T["muted"]).grid(row=0, column=0, padx=(10,4), pady=8)
+    ctk.CTkOptionMenu(chat_bar, values=["Server 1","Server 2","Server 3","All Servers"],
+                      variable=target_var, font=ctk.CTkFont(size=11), width=120, height=30,
+                      fg_color=T["bg"], button_color=T["border"], button_hover_color=T["muted"],
+                      text_color=T["text"], dropdown_fg_color=T["card"],
+                      dropdown_text_color=T["text"], dropdown_hover_color=T["border"]
+                      ).grid(row=0, column=1, padx=(0,6), pady=8, sticky="w")
+
+    mc_cmd_entry = ctk.CTkEntry(chat_bar, height=30, font=ctk.CTkFont(size=12),
+                                 fg_color=T["bg"], border_color=T["border"],
+                                 text_color=T["text"], placeholder_text="command or chat…")
+    mc_cmd_entry.grid(row=0, column=2, sticky="ew", padx=(0,6), pady=8)
+
     def _mc_send(_event=None):
-        cmd = cmd_entry.get().strip()
+        cmd = mc_cmd_entry.get().strip()
         if not cmd: return
         target = target_var.get()
-        targets = list(range(MAX_SLOTS)) if target == "All Servers"                   else [int(target.split()[-1]) - 1]
+        targets = list(range(MAX_SLOTS)) if target == "All Servers" else [int(target.split()[-1]) - 1]
         for s in targets:
             stdin = slots[s]["stdin"]
             if stdin:
-                try:
-                    stdin.write(cmd + "\n"); stdin.flush()
-                    app.after(0, _mc_log, s, f">> {cmd}")
-                except Exception as ex:
-                    app.after(0, _mc_log, s, f"[error] {ex}")
+                try: stdin.write(cmd + "\n"); stdin.flush(); app.after(0, _mc_log, s, f">> {cmd}")
+                except Exception as ex: app.after(0, _mc_log, s, f"[error] {ex}")
             else:
-                app.after(0, _mc_log, s,
-                          f"[Server {s+1} not running — command not sent]")
-        cmd_entry.delete(0, "end")
+                app.after(0, _mc_log, s, f"[Server {s+1} not running — command not sent]")
+        mc_cmd_entry.delete(0, "end")
 
-    cmd_entry.bind("<Return>", _mc_send)
-    ctk.CTkButton(chat_bar, text="Send", width=70, height=30,
-                  font=ctk.CTkFont(size=11),
-                  fg_color=T["sync"], hover_color=T["sync"],
-                  text_color="#000", command=_mc_send
-                  ).grid(row=0, column=3, padx=(0,10), pady=8)
+    mc_cmd_entry.bind("<Return>", _mc_send)
+    ctk.CTkButton(chat_bar, text="Send", width=70, height=30, font=ctk.CTkFont(size=11),
+                  fg_color=T["sync"], hover_color=T["sync"], text_color="#000",
+                  command=_mc_send).grid(row=0, column=3, padx=(0,10), pady=8)
 
-# ── Settings tab ─────────────────────────────────────────def build_settings_tab(parent):
+# ── Settings tab ──────────────────────────────────────────
+def build_settings_tab(parent):
     scroll = ctk.CTkScrollableFrame(parent, fg_color="transparent")
     scroll.pack(fill="both", expand=True, padx=20, pady=12)
 
@@ -3366,7 +2794,7 @@ def build_multictrl_tab(parent):
                       command=lambda: on_change(var.get()),
                       button_color=T["sync"], progress_color=T["sync"]).pack(side="right")
 
-    # Appearance
+    # ── Appearance ────────────────────────────────────────
     b = section("Appearance")
     def theme_fn(p):
         tm = ctk.CTkOptionMenu(p, values=list(THEMES.keys()), command=apply_theme,
@@ -3381,18 +2809,18 @@ def build_multictrl_tab(parent):
     def ram_fn(p):
         def toggle():
             global ram_display_mode
-            ram_display_mode = "fraction" if ram_display_mode=="percent" else "percent"
+            ram_display_mode = "fraction" if ram_display_mode == "percent" else "percent"
             update_setting("ram_display_mode", ram_display_mode)
-        sw(p, lambda: ram_display_mode=="fraction", lambda v: toggle())
+        sw(p, lambda: ram_display_mode == "fraction", lambda v: toggle())
     row(b, "Show RAM as x/y GB (instead of %)", ram_fn)
 
-    # Layout
+    # ── Layout ────────────────────────────────────────────
     b = section("Layout")
     row(b, "Log panel on left side",   lambda p: sw(p, lambda: log_left,  lambda v: swap_layout()))
     row(b, "Show performance panel",   lambda p: sw(p, lambda: show_perf, lambda v: toggle_perf()))
     row(b, "Show chat & events panel", lambda p: sw(p, lambda: show_chat, lambda v: toggle_chat()))
 
-    # Server paths
+    # ── Server paths ──────────────────────────────────────
     b = section("Server")
     def srv_e(label, key, default):
         r = ctk.CTkFrame(b, fg_color="transparent"); r.pack(fill="x", pady=4)
@@ -3410,7 +2838,7 @@ def build_multictrl_tab(parent):
     e_repo = srv_e("GitHub repo URL", "repo_url",  REPO_URL)
     e_java = srv_e("Java path",       "java_path", JAVA_PATH)
 
-    # Auto Upload
+    # ── Auto Upload ───────────────────────────────────────
     b = section("Auto Upload")
     row(b, "Enable auto upload",
         lambda p: sw(p, lambda: auto_upload, lambda v: toggle_auto_upload()))
@@ -3438,10 +2866,11 @@ def build_multictrl_tab(parent):
     row(b, "Upload world to GitHub on server stop",
         lambda p: sw(p, lambda: upload_on_stop, lambda v: _set_upload_on_stop(v)))
 
-    # ── Server Plugins Manager ────────────────────────────
+    # ── Plugin Manager ─────────────────────────────────────
     b = section("Server Plugins Manager")
-    def _get_pd(): return os.path.join(load_settings().get("srv_path",SRV_PATH),"plugins")
-    plf = ctk.CTkFrame(b, fg_color=T["bg"], border_color=T["border"], border_width=1, corner_radius=8)
+    def _get_pd(): return os.path.join(load_settings().get("srv_path", SRV_PATH), "plugins")
+    plf = ctk.CTkFrame(b, fg_color=T["bg"], border_color=T["border"],
+                       border_width=1, corner_radius=8)
     plf.pack(fill="x", pady=(0,6))
     def _ref_plug():
         for w in plf.winfo_children(): w.destroy()
@@ -3449,95 +2878,213 @@ def build_multictrl_tab(parent):
         try: jars = sorted([x for x in os.listdir(pd) if x.endswith(".jar")])
         except: jars = []
         if not jars:
-            ctk.CTkLabel(plf,text="No server plugins installed.",font=ctk.CTkFont(size=11),text_color=T["muted"]).pack(padx=14,pady=8)
+            ctk.CTkLabel(plf, text="No server plugins installed.",
+                         font=ctk.CTkFont(size=11), text_color=T["muted"]).pack(padx=14, pady=8)
         else:
             for j in jars:
-                pr=ctk.CTkFrame(plf,fg_color="transparent"); pr.pack(fill="x",padx=10,pady=3)
-                ctk.CTkLabel(pr,text=j.replace(".jar",""),font=ctk.CTkFont(size=12),text_color=T["text"]).pack(side="left")
+                pr = ctk.CTkFrame(plf, fg_color="transparent"); pr.pack(fill="x", padx=10, pady=3)
+                ctk.CTkLabel(pr, text=j.replace(".jar",""),
+                             font=ctk.CTkFont(size=12), text_color=T["text"]).pack(side="left")
                 def _rem(n=j):
-                    try: os.remove(os.path.join(_get_pd(),n)); show_toast(f"Removed {n}",T["stop"]); _ref_plug()
-                    except Exception as ex: show_toast(f"Error: {ex}",T["stop"])
-                ctk.CTkButton(pr,text="Remove",width=64,height=22,font=ctk.CTkFont(size=10),fg_color="transparent",
-                              border_width=1,border_color=T["stop"],text_color=T["stop"],hover_color=T["border"],
+                    try:
+                        os.remove(os.path.join(_get_pd(), n))
+                        show_toast(f"Removed {n}", T["stop"]); _ref_plug()
+                    except Exception as ex:
+                        show_toast(f"Error: {ex}", T["stop"])
+                ctk.CTkButton(pr, text="Remove", width=64, height=22,
+                              font=ctk.CTkFont(size=10), fg_color="transparent",
+                              border_width=1, border_color=T["stop"],
+                              text_color=T["stop"], hover_color=T["border"],
                               command=_rem).pack(side="right")
     def _add_plug():
-        pd=_get_pd(); os.makedirs(pd,exist_ok=True)
-        paths=_tk_fd.askopenfilenames(title="Select plugin JAR(s)",filetypes=[("JAR","*.jar"),("All","*.*")])
+        pd = _get_pd(); os.makedirs(pd, exist_ok=True)
+        paths = _tk_fd.askopenfilenames(title="Select plugin JAR(s)",
+                                        filetypes=[("JAR","*.jar"),("All","*.*")])
         if not paths: return
         for p in paths:
-            try: shutil.copy2(p,os.path.join(pd,os.path.basename(p)))
-            except Exception as ex: show_toast(f"Failed: {ex}",T["stop"])
-        show_toast(f"{len(paths)} plugin(s) added!",T["start"]); _ref_plug()
+            try: shutil.copy2(p, os.path.join(pd, os.path.basename(p)))
+            except Exception as ex: show_toast(f"Failed: {ex}", T["stop"])
+        show_toast(f"{len(paths)} plugin(s) added!", T["start"]); _ref_plug()
     _ref_plug()
-    plr=ctk.CTkFrame(b,fg_color="transparent"); plr.pack(fill="x",pady=(4,0))
-    ctk.CTkButton(plr,text="+ Add Plugin JAR(s)",height=30,corner_radius=6,font=ctk.CTkFont(size=12),
-                  fg_color=T["start"],hover_color=T["start"],text_color="#000",command=_add_plug).pack(side="left")
-    ctk.CTkButton(plr,text="Refresh",height=30,corner_radius=6,font=ctk.CTkFont(size=12),fg_color="transparent",
-                  border_width=1,border_color=T["border"],text_color=T["muted"],hover_color=T["border"],
-                  command=_ref_plug).pack(side="left",padx=(8,0))
-    ctk.CTkLabel(b,text="Restart the server after adding/removing plugins.",
-                 font=ctk.CTkFont(size=10),text_color=T["muted"]).pack(anchor="w",pady=(4,0))
+    plr = ctk.CTkFrame(b, fg_color="transparent"); plr.pack(fill="x", pady=(4,0))
+    ctk.CTkButton(plr, text="+ Add Plugin JAR(s)", height=30, corner_radius=6,
+                  font=ctk.CTkFont(size=12), fg_color=T["start"],
+                  hover_color=T["start"], text_color="#000",
+                  command=_add_plug).pack(side="left")
+    ctk.CTkButton(plr, text="Refresh", height=30, corner_radius=6,
+                  font=ctk.CTkFont(size=12), fg_color="transparent",
+                  border_width=1, border_color=T["border"],
+                  text_color=T["muted"], hover_color=T["border"],
+                  command=_ref_plug).pack(side="left", padx=(8,0))
+    ctk.CTkLabel(b, text="Restart the server after adding/removing plugins.",
+                 font=ctk.CTkFont(size=10), text_color=T["muted"]).pack(anchor="w", pady=(4,0))
 
-    # ── MC CTRL App Addons ─────────────────────────────────
+    # ── MC CTRL App Addons (with enable/disable toggle) ───
     b = section("MC CTRL App Addons")
-    ctk.CTkLabel(b,text=(
-        "Addons are custom Python (.py) scripts anyone can write to extend MC CTRL.\n"
-        "They are loaded at startup and can add new UI, commands, or automations."
-    ),font=ctk.CTkFont(size=11),text_color=T["muted"],wraplength=560,justify="left").pack(anchor="w",pady=(0,6))
-    addon_dir=os.path.join(os.path.dirname(os.path.abspath(__file__)),"addons")
-    os.makedirs(addon_dir,exist_ok=True)
-    alf=ctk.CTkFrame(b,fg_color=T["bg"],border_color=T["border"],border_width=1,corner_radius=8)
-    alf.pack(fill="x",pady=(0,6))
+    ctk.CTkLabel(b, text=(
+        "Addons are custom Python (.py) scripts that extend MC CTRL.\n"
+        "Toggle the switch to enable or disable each addon. "
+        "Changes take effect after restarting the app.\n"
+        "Install new addons by dropping .py files in the addons/ folder."
+    ), font=ctk.CTkFont(size=11), text_color=T["muted"],
+       wraplength=580, justify="left").pack(anchor="w", pady=(0,8))
+
+    addon_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "addons")
+    os.makedirs(addon_dir, exist_ok=True)
+
+    alf = ctk.CTkFrame(b, fg_color=T["bg"], border_color=T["border"],
+                       border_width=1, corner_radius=8)
+    alf.pack(fill="x", pady=(0,6))
+
     def _ref_addons():
         for w in alf.winfo_children(): w.destroy()
-        try: scripts=sorted([x for x in os.listdir(addon_dir) if x.endswith(".py")])
-        except: scripts=[]
+        try:
+            scripts = sorted([x for x in os.listdir(addon_dir) if x.endswith(".py")])
+        except:
+            scripts = []
+
         if not scripts:
-            ctk.CTkLabel(alf,text="No addons installed. Drop .py files in the addons/ folder.",
-                         font=ctk.CTkFont(size=11),text_color=T["muted"]).pack(padx=14,pady=8)
-        else:
-            for s in scripts:
-                ar=ctk.CTkFrame(alf,fg_color="transparent"); ar.pack(fill="x",padx=10,pady=3)
-                loaded=s.replace(".py","") in _loaded_addons
-                ctk.CTkLabel(ar,text="●",font=ctk.CTkFont(size=11),
-                             text_color=T["start"] if loaded else T["muted"]).pack(side="left",padx=(0,6))
-                ctk.CTkLabel(ar,text=s,font=ctk.CTkFont(size=12),text_color=T["text"]).pack(side="left")
-                ctk.CTkLabel(ar,text="loaded" if loaded else "not loaded",font=ctk.CTkFont(size=10),
-                             text_color=T["start"] if loaded else T["muted"]).pack(side="left",padx=8)
-                def _rel(n=s): _load_addon(os.path.join(addon_dir,n)); _ref_addons()
-                def _rem2(n=s):
-                    try:
-                        os.remove(os.path.join(addon_dir,n)); _loaded_addons.pop(n.replace(".py",""),None)
-                        show_toast(f"Removed {n}",T["stop"]); _ref_addons()
-                    except Exception as ex: show_toast(f"Error: {ex}",T["stop"])
-                ctk.CTkButton(ar,text="Reload",width=64,height=22,font=ctk.CTkFont(size=10),
-                              fg_color="transparent",border_width=1,border_color=T["sync"],
-                              text_color=T["sync"],hover_color=T["border"],command=_rel).pack(side="right",padx=(4,0))
-                ctk.CTkButton(ar,text="Remove",width=64,height=22,font=ctk.CTkFont(size=10),
-                              fg_color="transparent",border_width=1,border_color=T["stop"],
-                              text_color=T["stop"],hover_color=T["border"],command=_rem2).pack(side="right")
+            ctk.CTkLabel(alf, text="No addons installed. Drop .py files in the addons/ folder.",
+                         font=ctk.CTkFont(size=11), text_color=T["muted"]).pack(padx=14, pady=10)
+            return
+
+        # Header row
+        hdr_row = ctk.CTkFrame(alf, fg_color="transparent")
+        hdr_row.pack(fill="x", padx=10, pady=(8, 4))
+        ctk.CTkLabel(hdr_row, text="ADDON", font=ctk.CTkFont(size=9),
+                     text_color=T["muted"], width=200, anchor="w").pack(side="left", padx=(28, 0))
+        ctk.CTkLabel(hdr_row, text="STATUS", font=ctk.CTkFont(size=9),
+                     text_color=T["muted"]).pack(side="left", padx=8)
+        ctk.CTkLabel(hdr_row, text="ENABLED", font=ctk.CTkFont(size=9),
+                     text_color=T["muted"]).pack(side="right", padx=(0, 8))
+        ctk.CTkFrame(alf, height=1, fg_color=T["border"]).pack(fill="x", padx=10)
+
+        for script in scripts:
+            addon_name = script.replace(".py", "")
+            is_loaded  = addon_name in _loaded_addons
+            is_disabled = addon_name in _disabled_addons
+
+            row_frame = ctk.CTkFrame(alf, fg_color=T["card"] if is_loaded else "transparent",
+                                     corner_radius=6)
+            row_frame.pack(fill="x", padx=10, pady=3)
+
+            # Status dot
+            dot_color = T["start"] if is_loaded else (T["muted"] if is_disabled else T["handoff"])
+            dot_text  = "●" if is_loaded else ("○" if is_disabled else "◌")
+            ctk.CTkLabel(row_frame, text=dot_text, font=ctk.CTkFont(size=14),
+                         text_color=dot_color, width=22).pack(side="left", padx=(8, 4), pady=8)
+
+            # Name
+            ctk.CTkLabel(row_frame, text=addon_name,
+                         font=ctk.CTkFont(size=12, weight="bold" if is_loaded else "normal"),
+                         text_color=T["text"]).pack(side="left")
+
+            # Status badge
+            if is_loaded:
+                badge_text  = "running"
+                badge_color = T["start"]
+            elif is_disabled:
+                badge_text  = "disabled"
+                badge_color = T["muted"]
+            else:
+                badge_text  = "not loaded"
+                badge_color = T["handoff"]
+            ctk.CTkLabel(row_frame, text=badge_text, font=ctk.CTkFont(size=10),
+                         text_color=badge_color).pack(side="left", padx=8)
+
+            # Enable / Disable toggle
+            enabled_var = ctk.BooleanVar(value=(addon_name not in _disabled_addons))
+
+            def _on_toggle(val, name=addon_name):
+                global _disabled_addons
+                if val:
+                    _disabled_addons.discard(name)
+                else:
+                    _disabled_addons.add(name)
+                update_setting("disabled_addons", list(_disabled_addons))
+                _ref_addons()
+                state = "enabled" if val else "disabled"
+                show_toast(f"Addon '{name}' {state} — restart to apply", T["sync"])
+
+            toggle_sw = ctk.CTkSwitch(
+                row_frame, text="", variable=enabled_var,
+                command=lambda v=enabled_var, n=addon_name: _on_toggle(v.get(), n),
+                button_color=T["sync"], progress_color=T["sync"],
+                width=46, height=22)
+            toggle_sw.pack(side="right", padx=(0, 8), pady=6)
+
+            # Reload button (only useful if currently loaded)
+            def _rel(n=addon_name):
+                path = os.path.join(addon_dir, n + ".py")
+                _load_addon(path)
+                _ref_addons()
+            ctk.CTkButton(row_frame, text="Reload", width=58, height=22,
+                          font=ctk.CTkFont(size=10), fg_color="transparent",
+                          border_width=1, border_color=T["sync"],
+                          text_color=T["sync"], hover_color=T["border"],
+                          command=_rel).pack(side="right", padx=(0, 6))
+
+            # Remove button
+            def _rem2(n=addon_name):
+                try:
+                    os.remove(os.path.join(addon_dir, n + ".py"))
+                    _loaded_addons.pop(n, None)
+                    _disabled_addons.discard(n)
+                    update_setting("disabled_addons", list(_disabled_addons))
+                    show_toast(f"Removed {n}", T["stop"])
+                    _ref_addons()
+                except Exception as ex:
+                    show_toast(f"Error: {ex}", T["stop"])
+            ctk.CTkButton(row_frame, text="Remove", width=58, height=22,
+                          font=ctk.CTkFont(size=10), fg_color="transparent",
+                          border_width=1, border_color=T["stop"],
+                          text_color=T["stop"], hover_color=T["border"],
+                          command=_rem2).pack(side="right", padx=(0, 4))
+
+        # Restart notice
+        ctk.CTkFrame(alf, height=1, fg_color=T["border"]).pack(fill="x", padx=10, pady=(6, 0))
+        ctk.CTkLabel(alf, text="⚠  Enable/disable changes take effect after restarting MC CTRL.",
+                     font=ctk.CTkFont(size=10), text_color=T["handoff"]).pack(
+            anchor="w", padx=14, pady=(6, 10))
+
     def _inst_addon():
-        paths=_tk_fd.askopenfilenames(title="Select MC CTRL Addon (.py)",filetypes=[("Python","*.py"),("All","*.*")])
+        paths = _tk_fd.askopenfilenames(title="Select MC CTRL Addon (.py)",
+                                        filetypes=[("Python","*.py"),("All","*.*")])
         if not paths: return
         for p in paths:
-            dest=os.path.join(addon_dir,os.path.basename(p))
-            try: shutil.copy2(p,dest); _load_addon(dest)
-            except Exception as ex: show_toast(f"Failed: {ex}",T["stop"])
-        show_toast(f"{len(paths)} addon(s) installed!",T["start"]); _ref_addons()
-    _ref_addons()
-    alr=ctk.CTkFrame(b,fg_color="transparent"); alr.pack(fill="x",pady=(4,0))
-    ctk.CTkButton(alr,text="+ Install Addon (.py)",height=30,corner_radius=6,font=ctk.CTkFont(size=12),
-                  fg_color=T["sync"],hover_color=T["sync"],text_color="#000",command=_inst_addon).pack(side="left")
-    ctk.CTkButton(alr,text="Open Addons Folder",height=30,corner_radius=6,font=ctk.CTkFont(size=12),
-                  fg_color="transparent",border_width=1,border_color=T["border"],text_color=T["muted"],
-                  hover_color=T["border"],command=lambda:os.startfile(addon_dir)).pack(side="left",padx=(8,0))
-    ctk.CTkButton(alr,text="Refresh",height=30,corner_radius=6,font=ctk.CTkFont(size=12),
-                  fg_color="transparent",border_width=1,border_color=T["border"],text_color=T["muted"],
-                  hover_color=T["border"],command=_ref_addons).pack(side="left",padx=(8,0))
-    ctk.CTkLabel(b,text="Addon API: your script's setup(ctx) receives app, T, log, show_toast, send_server_cmd, load_settings.",
-                 font=ctk.CTkFont(size=10),text_color=T["muted"],wraplength=560,justify="left").pack(anchor="w",pady=(6,0))
+            dest = os.path.join(addon_dir, os.path.basename(p))
+            try:
+                shutil.copy2(p, dest)
+                _load_addon(dest)
+            except Exception as ex:
+                show_toast(f"Failed: {ex}", T["stop"])
+        show_toast(f"{len(paths)} addon(s) installed!", T["start"])
+        _ref_addons()
 
-    # About
+    _ref_addons()
+
+    alr = ctk.CTkFrame(b, fg_color="transparent"); alr.pack(fill="x", pady=(4,0))
+    ctk.CTkButton(alr, text="+ Install Addon (.py)", height=30, corner_radius=6,
+                  font=ctk.CTkFont(size=12), fg_color=T["sync"],
+                  hover_color=T["sync"], text_color="#000",
+                  command=_inst_addon).pack(side="left")
+    ctk.CTkButton(alr, text="Open Addons Folder", height=30, corner_radius=6,
+                  font=ctk.CTkFont(size=12), fg_color="transparent",
+                  border_width=1, border_color=T["border"],
+                  text_color=T["muted"], hover_color=T["border"],
+                  command=lambda: os.startfile(addon_dir)).pack(side="left", padx=(8,0))
+    ctk.CTkButton(alr, text="Refresh", height=30, corner_radius=6,
+                  font=ctk.CTkFont(size=12), fg_color="transparent",
+                  border_width=1, border_color=T["border"],
+                  text_color=T["muted"], hover_color=T["border"],
+                  command=_ref_addons).pack(side="left", padx=(8,0))
+    ctk.CTkLabel(b, text=(
+        "Addon API: your script's setup(ctx) receives "
+        "app, T, log, show_toast, send_server_cmd, load_settings."
+    ), font=ctk.CTkFont(size=10), text_color=T["muted"],
+       wraplength=580, justify="left").pack(anchor="w", pady=(6,0))
+
+    # ── About / Setup ──────────────────────────────────────
     b = section("Setup & About")
     def reopen_fn(p):
         ctk.CTkButton(p, text="Re-open First-Launch Setup",
@@ -3549,30 +3096,23 @@ def build_multictrl_tab(parent):
     ctk.CTkLabel(scroll, text=f"Settings file: {SETTINGS_FILE}",
                  font=ctk.CTkFont(size=10), text_color=T["muted"]).pack(anchor="w", pady=(4,0))
 
+
 def _set_upload_on_stop(val):
     global upload_on_stop
-    upload_on_stop = val; update_setting("upload_on_stop", val)
+    upload_on_stop = val
+    update_setting("upload_on_stop", val)
 
-# ── Server actions ────────────────────────────────────────
+# ── EULA check ────────────────────────────────────────────
 def _check_eula(path):
-    """
-    Returns True if eula=true is already set.
-    Otherwise shows a modal popup explaining the Minecraft EULA and lets the
-    user accept or cancel.  If accepted, writes eula.txt and returns True.
-    If cancelled, returns False (server will not start).
-    """
     eula_path = os.path.join(path, "eula.txt")
-
-    # Already accepted?
     try:
         txt = open(eula_path, encoding="utf-8").read().lower()
         if "eula=true" in txt:
             return True
     except FileNotFoundError:
-        pass  # file doesn't exist yet — need to show popup
+        pass
 
-    # Show the popup on the main thread and block until the user responds
-    result = [None]   # shared result between threads
+    result = [None]
 
     def _show():
         win = ctk.CTkToplevel(app)
@@ -3581,10 +3121,8 @@ def _check_eula(path):
         win.configure(fg_color=T["bg"])
         win.grab_set()
         win.attributes("-topmost", True)
-        win.protocol("WM_DELETE_WINDOW", lambda: None)   # can't close with X
+        win.protocol("WM_DELETE_WINDOW", lambda: None)
 
-        # Centre over main window
-        win.update_idletasks()
         w, h = 500, 390
         try:
             ax = app.winfo_x() + (app.winfo_width()  - w) // 2
@@ -3593,19 +3131,15 @@ def _check_eula(path):
         except:
             win.geometry(f"{w}x{h}")
 
-        # ── Icon row ──────────────────────────────────────
         ctk.CTkLabel(win, text="⚠", font=ctk.CTkFont(size=42),
                      text_color=T["handoff"]).pack(pady=(22, 0))
-
         ctk.CTkLabel(win, text="Minecraft End User Licence Agreement",
                      font=ctk.CTkFont(size=15, weight="bold"),
                      text_color=T["text"]).pack(pady=(6, 0))
 
-        # ── Body ──────────────────────────────────────────
         body = ctk.CTkFrame(win, fg_color=T["card"], border_color=T["border"],
                             border_width=1, corner_radius=10)
         body.pack(fill="x", padx=24, pady=14)
-
         ctk.CTkLabel(body, text=(
             "Before starting your server for the first time, you must\n"
             "agree to the Minecraft End User Licence Agreement (EULA).\n\n"
@@ -3617,7 +3151,6 @@ def _check_eula(path):
         ), font=ctk.CTkFont(size=12), text_color=T["muted"],
            justify="left").pack(padx=18, pady=14)
 
-        # ── Buttons ───────────────────────────────────────
         btn_row = ctk.CTkFrame(win, fg_color="transparent")
         btn_row.pack(pady=(0, 18))
 
@@ -3626,7 +3159,7 @@ def _check_eula(path):
                 os.makedirs(path, exist_ok=True)
                 with open(eula_path, "w", encoding="utf-8") as f:
                     f.write(
-                        "# Accepted via MC CTRL on "
+                        f"# Accepted via MC CTRL on "
                         f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
                         "# https://aka.ms/MinecraftEULA\n"
                         "eula=true\n"
@@ -3643,28 +3176,23 @@ def _check_eula(path):
 
         ctk.CTkButton(btn_row, text="I Agree — Accept EULA", width=190, height=36,
                       font=ctk.CTkFont(size=13, weight="bold"),
-                      fg_color=T["start"], hover_color=T["start"],
-                      text_color="#000000",
+                      fg_color=T["start"], hover_color=T["start"], text_color="#000000",
                       command=_accept).pack(side="left", padx=(0, 12))
-
         ctk.CTkButton(btn_row, text="Decline", width=100, height=36,
                       font=ctk.CTkFont(size=13),
                       fg_color="transparent", border_width=1,
                       border_color=T["stop"], text_color=T["stop"],
-                      hover_color=T["border"],
-                      command=_decline).pack(side="left")
+                      hover_color=T["border"], command=_decline).pack(side="left")
 
-        win.wait_window()   # blocks until accepted or declined
+        win.wait_window()
 
     app.after(0, _show)
-
-    # spin-wait for the popup to be dismissed (we're on a daemon thread)
     while result[0] is None:
         time.sleep(0.05)
-
     return result[0]
 
 
+# ── Server actions ────────────────────────────────────────
 def start_server():
     global server_proc, server_stdin, server_pid, server_start_time, perf_running, server_ready, player_count
     set_all_buttons("disabled")
@@ -3673,7 +3201,6 @@ def start_server():
     java = s.get("java_path", JAVA_PATH)
     repo = s.get("repo_url", REPO_URL)
 
-    # ── EULA check — must happen before launch ─────────────
     if not _check_eula(path):
         log("  Server start cancelled — EULA not accepted.")
         set_status("Stopped", T["stop"])
@@ -3701,7 +3228,8 @@ def start_server():
         java_cmd, shell=True, cwd=path,
         stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
         text=True, bufsize=1, creationflags=CREATE_NO_WINDOW)
-    server_stdin = server_proc.stdin; server_pid = server_proc.pid
+    server_stdin = server_proc.stdin
+    server_pid   = server_proc.pid
     server_start_time = datetime.now()
     server_ready = False; player_count = 0; online_players.clear()
     perf["tps"] = perf["latency"] = "--"; perf["players"] = "0"
@@ -3713,17 +3241,33 @@ def start_server():
     try: btn_stop.configure(state="normal")
     except: pass
 
+
 def stop_server():
     global server_proc, server_stdin, server_pid, server_start_time, perf_running, server_ready
     set_status("Stopping...", T["handoff"])
     log("-- Stop Server -------------------")
+    # Send graceful stop command first so the world saves cleanly
     if server_stdin:
         try: server_stdin.write("stop\n"); server_stdin.flush()
         except: pass
         server_stdin = None
-    r = subprocess.run("taskkill /F /IM java.exe", shell=True, capture_output=True,
-                       text=True, creationflags=CREATE_NO_WINDOW)
-    log("  Java killed." if r.returncode==0 else "  Java was not running.")
+    # Wait up to 15 s for graceful shutdown before forcing
+    if server_proc:
+        try:
+            server_proc.wait(timeout=15)
+            log("  Server stopped gracefully.")
+        except subprocess.TimeoutExpired:
+            # Only kill THIS process by PID — never kill all java.exe on the machine
+            if server_pid:
+                r = subprocess.run(f"taskkill /F /PID {server_pid}", shell=True,
+                                   capture_output=True, text=True,
+                                   creationflags=CREATE_NO_WINDOW)
+                log(f"  Force-killed PID {server_pid}." if r.returncode == 0
+                    else f"  Could not kill PID {server_pid}: {r.stderr.strip()}")
+            else:
+                try: server_proc.kill()
+                except: pass
+                log("  Force-killed server process.")
     server_proc = server_pid = server_start_time = None
     server_ready = perf_running = False
     for k in ("tps","latency","players","uptime","ram_srv","cpu_srv","threads"):
@@ -3740,12 +3284,21 @@ def stop_server():
             log("  World unchanged - nothing to commit.")
         else:
             for line in commit.stdout.strip().splitlines(): log(f"  {line}")
-            run_cmd("git push origin main", cwd=path)
-            app.after(0, show_toast, "World pushed to GitHub!", T["sync"])
+            push = subprocess.run("git push origin main", shell=True, cwd=path,
+                                  capture_output=True, text=True,
+                                  creationflags=CREATE_NO_WINDOW)
+            if push.returncode == 0:
+                for line in push.stdout.strip().splitlines(): log(f"  {line}")
+                app.after(0, show_toast, "World pushed to GitHub!", T["sync"])
+            else:
+                err = (push.stderr.strip() or push.stdout.strip() or "unknown error")[:120]
+                log(f"  Push FAILED: {err}")
+                app.after(0, show_toast, f"Git push failed — check log for details", T["stop"], 7000)
     else:
         log("  Upload on stop disabled - skipping push.")
     set_status("Stopped", T["stop"]); log("Done.")
     set_all_buttons("normal")
+
 
 def sync_git():
     set_all_buttons("disabled")
@@ -3760,28 +3313,25 @@ def sync_git():
     log("Upload complete!" if ok else "Push failed.")
     set_status("Stopped", T["stop"]); set_all_buttons("normal")
 
-# ── Boot ──────────────────────────────────────────────────
-# Show a minimal loading screen immediately so the window
-# appears instantly, then build the real UI on the next tick.
+
+# ── Boot splash ───────────────────────────────────────────
 _splash_frame = ctk.CTkFrame(app, fg_color=T["bg"])
 _splash_frame.place(relx=0, rely=0, relwidth=1, relheight=1)
 _splash_lbl = ctk.CTkLabel(
-    _splash_frame,
-    text="MC CTRL",
+    _splash_frame, text="MC CTRL",
     font=ctk.CTkFont(size=48, weight="bold"),
     text_color=T["start"])
 _splash_lbl.place(relx=0.5, rely=0.38, anchor="center")
 _splash_sub = ctk.CTkLabel(
-    _splash_frame,
-    text="Loading…",
-    font=ctk.CTkFont(size=14),
-    text_color=T["muted"])
+    _splash_frame, text="Loading…",
+    font=ctk.CTkFont(size=14), text_color=T["muted"])
 _splash_sub.place(relx=0.5, rely=0.50, anchor="center")
 _splash_bar = ctk.CTkProgressBar(_splash_frame, width=260, height=6,
                                   fg_color=T["border"], progress_color=T["start"])
 _splash_bar.place(relx=0.5, rely=0.57, anchor="center")
 _splash_bar.set(0)
 _splash_bar.start()
+
 
 def _finish_boot():
     global _splash_frame
@@ -3790,7 +3340,9 @@ def _finish_boot():
     _splash_frame.destroy()
     if auto_upload: schedule_auto_upload()
 
+
 app.after(50, _finish_boot)
+
 
 def _splash():
     lines = [
@@ -3805,11 +3357,13 @@ def _splash():
         f"  GamerMahir07's MC CTRL — Minecraft Server Controller",
         f"  Theme: {current_theme_name}  |  {datetime.now().strftime('%A, %B %d %Y  %H:%M')}",
         f"  Auto-upload: {'ON' if auto_upload else 'OFF'}  |  Upload on stop: {'ON' if upload_on_stop else 'OFF'}",
+        f"  Disabled addons: {', '.join(_disabled_addons) if _disabled_addons else 'none'}",
         "",
     ]
     for line in lines: log(line)
     if is_first_launch: app.after(200, show_first_launch_dialog)
 
+
 app.after(200, _splash)
-app.after(800, _load_all_addons)  # load addons after UI is visible
+app.after(800, _load_all_addons)
 app.mainloop()

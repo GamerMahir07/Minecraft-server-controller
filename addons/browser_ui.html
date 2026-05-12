@@ -1,0 +1,590 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>MC CTRL</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;700&family=Space+Mono&display=swap" rel="stylesheet">
+<style>
+/* ── Reset & base ─────────────────────────────────────── */
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;overflow:hidden}
+body{
+  background:var(--bg);color:var(--text);
+  font-family:'Space Grotesk',system-ui,sans-serif;
+  font-size:13px;display:flex;flex-direction:column;
+}
+
+/* ── CSS variables ────────────────────────────────────── */
+:root{
+  --bg:    #0e0e10; --card:   #18181b; --card2: #1e1e23;
+  --border:#2a2a35; --text:   #f0f0f0; --muted: #6b6b80;
+  --start: #5bff89; --stop:   #ff6565; --sync:  #4d8aff; --handoff:#ffee55;
+  --mono:  'Space Mono',Consolas,monospace;
+}
+
+/* ── Scrollbar ────────────────────────────────────────── */
+::-webkit-scrollbar{width:5px;height:5px}
+::-webkit-scrollbar-track{background:var(--bg)}
+::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
+::-webkit-scrollbar-thumb:hover{background:var(--muted)}
+
+/* ── Animations ───────────────────────────────────────── */
+@keyframes fadeUp{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:none}}
+@keyframes glow{
+  0%,100%{text-shadow:0 0 6px var(--start)}
+  50%    {text-shadow:0 0 22px var(--start),0 0 44px var(--start)}
+}
+
+/* ── Buttons ──────────────────────────────────────────── */
+.btn{
+  border:none;
+  font-family:'Space Grotesk',sans-serif;
+  font-size:12px;font-weight:700;
+  border-radius:10px;padding:7px 18px;
+  cursor:pointer;
+  display:inline-flex;align-items:center;justify-content:center;gap:6px;
+  white-space:nowrap;user-select:none;
+  transition:filter .12s,transform .08s,box-shadow .12s;
+  box-shadow:0 2px 8px rgba(0,0,0,.35);
+}
+.btn:hover{filter:brightness(1.15);box-shadow:0 4px 16px rgba(0,0,0,.45)}
+.btn:active{transform:scale(.95);filter:brightness(.85)}
+.btn:disabled{opacity:.35;cursor:default;filter:none;transform:none;box-shadow:none}
+.btn.sm{font-size:11px;padding:5px 12px;border-radius:8px;box-shadow:none}
+.btn.lg{font-size:13px;padding:10px 26px;border-radius:13px}
+.btn.start{background:var(--start);color:#000}
+.btn.sync {background:var(--sync); color:#000}
+.btn.ghost{
+  background:transparent;border:1px solid var(--border);
+  color:var(--muted);font-weight:400;box-shadow:none;
+}
+.btn.ghost:hover{border-color:var(--muted);color:var(--text);filter:none}
+.btn.danger{
+  background:transparent;border:1px solid var(--stop);
+  color:var(--stop);box-shadow:none;
+}
+.btn.danger:hover{background:rgba(255,101,101,.1);filter:none;box-shadow:0 0 0 2px rgba(255,101,101,.2)}
+
+/* ── Quick command buttons ────────────────────────────── */
+.qbtn{
+  background:transparent;border:1px solid var(--border);
+  color:var(--muted);font-family:'Space Grotesk',sans-serif;
+  font-size:11px;padding:6px 8px;border-radius:8px;
+  cursor:pointer;text-align:left;
+  transition:border-color .15s,color .15s,background .15s;
+}
+.qbtn:hover{border-color:var(--sync);color:var(--text);background:rgba(77,138,255,.07)}
+.qbtn:active{transform:scale(.94)}
+
+/* ── Top bar ──────────────────────────────────────────── */
+#topbar{
+  display:flex;align-items:center;gap:3px;
+  background:var(--card);height:46px;padding:0 14px;
+  flex-shrink:0;border-bottom:1px solid var(--border);
+}
+.logo{font-weight:700;font-size:16px;margin-right:16px;color:var(--text)}
+.tab{
+  background:transparent;border:none;
+  font-family:'Space Grotesk',sans-serif;
+  color:var(--muted);font-size:12px;padding:5px 14px;border-radius:8px;
+  cursor:pointer;transition:background .12s,color .12s;
+  display:flex;align-items:center;gap:5px;
+}
+.tab:hover{background:rgba(255,255,255,.05);color:var(--text)}
+.tab.active{
+  background:var(--card2);border:1px solid var(--border);
+  color:var(--text);font-weight:700;
+  box-shadow:inset 0 -2px 0 var(--sync);
+}
+#status-pill{margin-left:auto;display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted)}
+#status-dot{font-size:17px;line-height:1;color:var(--stop);transition:color .3s}
+#status-dot.on{color:var(--start);animation:glow 2s ease-in-out infinite}
+
+/* ── Pages ────────────────────────────────────────────── */
+#content{flex:1;overflow:hidden;display:flex;flex-direction:column}
+.page{display:none;flex:1;overflow:hidden;flex-direction:column}
+.page.active{display:flex;animation:fadeUp .18s ease}
+
+/* ── Cards ────────────────────────────────────────────── */
+.card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:13px 15px}
+.acard{background:var(--card);border:1px solid var(--border);border-left:3px solid var(--sync);border-radius:12px;padding:13px 15px}
+.clabel{font-size:9px;color:var(--muted);letter-spacing:1.3px;text-transform:uppercase;margin-bottom:10px;font-weight:700}
+
+/* ── Stats ────────────────────────────────────────────── */
+.stats-grid{display:flex;gap:6px;flex-wrap:wrap}
+.stat{background:var(--card2);border:1px solid var(--border);border-radius:10px;padding:8px 12px;text-align:center;flex:1;min-width:72px;transition:border-color .2s}
+.stat:hover{border-color:var(--muted)}
+.stat-l{font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.8px}
+.stat-v{font-size:16px;font-weight:700;margin-top:3px}
+
+/* ── Log box ──────────────────────────────────────────── */
+.logbox{flex:1;overflow-y:auto;font-family:var(--mono);font-size:11.5px;line-height:1.72;padding:10px 13px;background:var(--bg);border-radius:10px;border:1px solid var(--border)}
+.ll{word-break:break-word;padding:0 1px}
+.ll.err {color:var(--stop)}
+.ll.ok  {color:var(--start)}
+.ll.cmd {color:var(--sync)}
+.ll.ev  {color:var(--handoff)}
+
+/* ── Inputs ───────────────────────────────────────────── */
+input,select{background:var(--card2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:var(--mono);font-size:12px;padding:7px 11px;outline:none;width:100%;transition:border-color .15s,box-shadow .15s}
+input:focus,select:focus{border-color:var(--sync);box-shadow:0 0 0 2px color-mix(in srgb, var(--sync) 20%, transparent)}
+.flabel{font-size:10px;color:var(--muted);display:block;margin-bottom:4px;font-weight:700;letter-spacing:.5px;text-transform:uppercase}
+
+/* ── Toggle switch ────────────────────────────────────── */
+.toggle{position:relative;display:inline-block;width:42px;height:23px;flex-shrink:0}
+.toggle input{opacity:0;width:0;height:0}
+.slider{position:absolute;inset:0;background:var(--border);border-radius:23px;cursor:pointer;transition:.22s}
+.slider::before{content:'';position:absolute;width:17px;height:17px;left:3px;top:3px;background:#aaa;border-radius:50%;transition:.22s}
+input:checked+.slider{background:var(--start)}
+input:checked+.slider::before{transform:translateX(19px);background:#fff}
+
+/* ── Dashboard layout ─────────────────────────────────── */
+#page-dashboard{flex-direction:row;gap:11px;padding:12px;overflow:hidden}
+#dleft{width:270px;flex-shrink:0;display:flex;flex-direction:column;gap:9px;overflow-y:auto}
+#dright{flex:1;display:flex;flex-direction:column;gap:9px;overflow:hidden}
+#quickgrid{display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-top:8px}
+
+/* ── Network ──────────────────────────────────────────── */
+#page-network{padding:14px;overflow-y:auto}
+.ip-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:11px;max-width:920px}
+.ip-card{border-radius:13px;padding:15px 16px;display:flex;flex-direction:column;gap:7px;background:var(--card)}
+.ip-label{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.9px}
+.ip-sub{font-size:10px;color:var(--muted)}
+.ip-val{font-family:var(--mono);font-size:13px;font-weight:700}
+.guide-item{color:var(--muted);font-size:12px;margin-bottom:5px;line-height:1.7}
+.guide-n{color:var(--sync);margin-right:6px;font-weight:700}
+
+/* ── Settings ─────────────────────────────────────────── */
+#page-settings{padding:14px;overflow-y:auto}
+.sinner{max-width:620px;display:flex;flex-direction:column;gap:10px}
+.srow{display:flex;align-items:center;justify-content:space-between;padding:9px 0;border-bottom:1px solid var(--border)}
+.srow:last-child{border-bottom:none}
+.srow-l{font-size:12px;color:var(--text);font-weight:700}
+.srow-s{font-size:10px;color:var(--muted);margin-top:2px}
+.frow{margin-bottom:12px}
+.tgrid{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.tchip{background:transparent;border:1px solid var(--border);color:var(--muted);font-size:11px;padding:4px 12px;border-radius:7px;cursor:pointer;transition:background .15s,border-color .15s,color .15s;font-family:'Space Grotesk',sans-serif}
+.tchip:hover{border-color:var(--muted);color:var(--text)}
+/* active state is set inline by JS so it always matches the current theme sync color */
+
+/* ── Read-only notice banner ──────────────────────────── */
+#ro-banner{
+  background:rgba(245,158,11,.1);
+  border-bottom:1px solid rgba(245,158,11,.3);
+  color:var(--handoff);
+  font-size:11px;padding:6px 16px;text-align:center;
+  flex-shrink:0;
+}
+</style>
+</head>
+<body>
+
+<div id="ro-banner">
+  ⚠ Browser UI — view-only for Start/Stop. Use the Python launcher to control the server.
+  &nbsp;|&nbsp; Auto-refreshes every 2 s &nbsp;|&nbsp; <a href="/" style="color:var(--sync)">Refresh page</a>
+</div>
+
+<!-- TOP BAR -->
+<div id="topbar">
+  <span class="logo">⛏ MC CTRL - Prototype</span>
+  <button class="tab active" data-tab="dashboard" onclick="showTab('dashboard')">📊 Dashboard</button>
+  <button class="tab"        data-tab="console"   onclick="showTab('console')">💻 Console</button>
+  <button class="tab"        data-tab="network"   onclick="showTab('network')">🌐 Network</button>
+  <button class="tab"        data-tab="settings"  onclick="showTab('settings')">⚙ Settings</button>
+  <div id="status-pill">
+    <span id="status-dot">●</span>
+    <span id="status-txt">Stopped</span>
+  </div>
+</div>
+
+<div id="content">
+
+  <!-- DASHBOARD -->
+  <div id="page-dashboard" class="page active">
+    <div id="dleft">
+
+      <div class="acard">
+        <div class="clabel">Server Status</div>
+        <div class="stats-grid" style="margin-bottom:10px">
+          <div class="stat"><div class="stat-l">TPS</div>    <div class="stat-v" id="s-tps"     style="color:var(--start)">--</div></div>
+          <div class="stat"><div class="stat-l">Players</div><div class="stat-v" id="s-players">0</div></div>
+          <div class="stat"><div class="stat-l">Uptime</div> <div class="stat-v" id="s-uptime"  style="font-size:13px">--</div></div>
+          <div class="stat"><div class="stat-l">RAM</div>    <div class="stat-v" id="s-ram"     style="font-size:13px">--</div></div>
+        </div>
+        <div style="font-size:10px;color:var(--muted);line-height:1.6">
+          To start or stop the server, use the Python launcher window.
+          This UI lets you send commands and monitor the server.
+        </div>
+      </div>
+
+      <div class="card" style="flex:1">
+        <div class="clabel">Quick Commands</div>
+        <div id="quickgrid">
+          <button class="qbtn" onclick="cmd('save-all')">💾 Save World</button>
+          <button class="qbtn" onclick="cmd('list')">👥 Player List</button>
+          <button class="qbtn" onclick="cmd('tps')">⚡ TPS</button>
+          <button class="qbtn" onclick="cmd('time set day')">☀ Set Day</button>
+          <button class="qbtn" onclick="cmd('time set night')">🌙 Set Night</button>
+          <button class="qbtn" onclick="cmd('weather clear')">🌤 Clear Weather</button>
+          <button class="qbtn" onclick="cmd('difficulty hard')">⚔ Hard Mode</button>
+          <button class="qbtn" onclick="cmd('difficulty peaceful')">🕊 Peaceful</button>
+          <button class="qbtn" onclick="cmd('gamerule keepInventory true')">🎒 Keep Inv</button>
+          <button class="qbtn" onclick="cmd('reload')">🔄 Reload</button>
+        </div>
+      </div>
+
+    </div>
+
+    <div id="dright">
+      <div class="card" style="flex:1;display:flex;flex-direction:column;overflow:hidden">
+        <div style="display:flex;align-items:center;gap:7px;margin-bottom:9px">
+          <span class="clabel" style="margin:0">Activity Log</span>
+          <button class="btn sm ghost" onclick="copyLog()">📋 Copy</button>
+          <button class="btn sm ghost" onclick="clearLog()">🗑 Clear</button>
+        </div>
+        <div id="dash-log" class="logbox"></div>
+      </div>
+
+      <div class="card" style="flex-shrink:0">
+        <div class="clabel">Chat &amp; Events</div>
+        <div id="chat-log" class="logbox" style="height:82px;flex:none"></div>
+      </div>
+
+      <div class="card" style="flex-shrink:0">
+        <div style="display:flex;gap:8px;align-items:center">
+          <span style="font-size:18px;color:var(--muted);font-family:var(--mono);user-select:none">/</span>
+          <input id="dash-cmd" placeholder="command or chat…  (↑↓ history)" style="flex:1;height:36px" onkeydown="dkey(event)">
+          <button class="btn sync" onclick="dsend()" style="height:36px;padding:0 20px">Send</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- CONSOLE -->
+  <div id="page-console" class="page" style="flex-direction:column;padding:12px;gap:10px">
+    <div id="con-log" class="logbox"></div>
+    <div style="display:flex;gap:8px;align-items:center">
+      <span style="font-size:18px;color:var(--muted);font-family:var(--mono);user-select:none">/</span>
+      <input id="cin" style="flex:1;height:38px;font-size:13px" placeholder="command… (↑↓ for history)" onkeydown="ckey(event)">
+      <button class="btn sync" onclick="csend()" style="height:38px;padding:0 22px">Send</button>
+    </div>
+  </div>
+
+  <!-- NETWORK -->
+  <div id="page-network" class="page">
+    <div class="ip-grid" id="ip-grid"></div>
+    <div style="max-width:920px">
+      <div class="card">
+        <div class="clabel">Connection Guide</div>
+        <p class="guide-item"><span class="guide-n">1.</span>Same WiFi → share the <b>Local</b> address</p>
+        <p class="guide-item"><span class="guide-n">2.</span>Internet friends → share <b>External</b> + port-forward <b>25565 TCP</b> on your router</p>
+        <p class="guide-item"><span class="guide-n">3.</span>Testing locally → <b>localhost:25565</b></p>
+        <p class="guide-item"><span class="guide-n">4.</span>Have a domain → set it in the Python launcher → Network &amp; IPs tab</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- SETTINGS -->
+  <div id="page-settings" class="page">
+    <div class="sinner">
+
+      <div class="card">
+        <div class="clabel">Theme</div>
+        <div class="tgrid" id="tgrid"></div>
+      </div>
+
+      <div class="card">
+        <div class="clabel">Server Paths</div>
+        <div class="frow"><label class="flabel">Server folder</label>
+          <input id="s-srv"  placeholder="C:\path\to\server"   onchange="saveSetting('srv_path',this.value)"></div>
+        <div class="frow"><label class="flabel">Java executable</label>
+          <input id="s-java" placeholder="C:\path\to\java.exe" onchange="saveSetting('java_path',this.value)"></div>
+        <div class="frow" style="margin-bottom:6px"><label class="flabel">GitHub repo URL</label>
+          <input id="s-repo" placeholder="https://github.com/you/repo" onchange="saveSetting('repo_url',this.value)"></div>
+      </div>
+
+      <div class="card">
+        <div class="clabel">Auto Upload</div>
+        <div class="srow">
+          <div><div class="srow-l">Upload on Stop</div><div class="srow-s">Push world to GitHub when server stops</div></div>
+          <label class="toggle"><input type="checkbox" id="s-uos" onchange="saveSetting('upload_on_stop',this.checked)"><span class="slider"></span></label>
+        </div>
+        <div class="srow">
+          <div><div class="srow-l">Auto Upload</div><div class="srow-s">Push on a timer while server is running</div></div>
+          <label class="toggle"><input type="checkbox" id="s-au" onchange="saveSetting('auto_upload',this.checked)"><span class="slider"></span></label>
+        </div>
+        <div class="srow" style="border-bottom:none">
+          <div><div class="srow-l">Upload interval (minutes)</div></div>
+          <input id="s-mins" type="number" min="1" style="width:68px;text-align:center" onchange="saveSetting('auto_upload_mins',parseInt(this.value)||10)">
+        </div>
+      </div>
+
+      <div class="card" style="color:var(--muted);font-size:11px;line-height:2">
+        MC CTRL Browser UI — running on <span style="color:var(--sync);font-family:var(--mono)">localhost:8765</span><br>
+        Shares <span style="color:var(--sync);font-family:var(--mono)">settings.json</span> with the Python launcher.<br>
+        Settings changes take effect in the Python launcher on next restart.
+      </div>
+
+    </div>
+  </div>
+
+</div>
+
+<script>
+/* ── Themes ─────────────────────────────────────────────── */
+const THEMES = {
+  "Dark (Default)":    {bg:"#0e0e10",card:"#18181b",card2:"#1e1e23",border:"#2a2a35",text:"#f0f0f0",muted:"#6b6b80",start:"#5bff89",stop:"#ff6565",sync:"#4d8aff",handoff:"#ffee55"},
+  "Obsidian Dark":     {bg:"#020202",card:"#070710",card2:"#0d0d18",border:"#13132a",text:"#cdd6f4",muted:"#3a3a52",start:"#a6e3a1",stop:"#f38ba8",sync:"#89b4fa",handoff:"#fab387"},
+  "Midnight Blue Dark":{bg:"#0a0f1e",card:"#111827",card2:"#162030",border:"#1e3a5f",text:"#e2e8f0",muted:"#4a6080",start:"#34d399",stop:"#f87171",sync:"#818cf8",handoff:"#fbbf24"},
+  "Creeper Green Dark":{bg:"#0a1a0a",card:"#0f2a0f",card2:"#142014",border:"#1a4a1a",text:"#c8f0c8",muted:"#3a6a3a",start:"#4ade80",stop:"#f87171",sync:"#86efac",handoff:"#fde047"},
+  "Nether Red Dark":   {bg:"#050000",card:"#1a0000",card2:"#220000",border:"#6a0000",text:"#ff7070",muted:"#8b0000",start:"#ff6b6b",stop:"#ff0000",sync:"#ff8c8c",handoff:"#ffd700"},
+  "Dracula Dark":      {bg:"#1e1f29",card:"#282a36",card2:"#313442",border:"#44475a",text:"#f8f8f2",muted:"#6272a4",start:"#50fa7b",stop:"#ff5555",sync:"#8be9fd",handoff:"#ffb86c"},
+  "Nord Dark":         {bg:"#242933",card:"#2e3440",card2:"#3b4252",border:"#434c5e",text:"#eceff4",muted:"#4c566a",start:"#a3be8c",stop:"#bf616a",sync:"#88c0d0",handoff:"#ebcb8b"},
+  "Ocean Dark":        {bg:"#01131e",card:"#021f30",card2:"#082840",border:"#0e4a6e",text:"#bae6fd",muted:"#2a6a8a",start:"#22d3ee",stop:"#f87171",sync:"#38bdf8",handoff:"#fbbf24"},
+  "Gruvbox Dark":      {bg:"#1d2021",card:"#282828",card2:"#3c3836",border:"#504945",text:"#ebdbb2",muted:"#7c6f64",start:"#b8bb26",stop:"#fb4934",sync:"#83a598",handoff:"#fabd2f"},
+  "Cyberpunk Dark":    {bg:"#050010",card:"#0a0019",card2:"#110022",border:"#3b0066",text:"#00ffff",muted:"#8800aa",start:"#00ffff",stop:"#ff0088",sync:"#ff00ff",handoff:"#ffff00"},
+  "Matrix Dark":       {bg:"#000000",card:"#001400",card2:"#002000",border:"#004400",text:"#00ff41",muted:"#006600",start:"#00ff41",stop:"#ff0000",sync:"#00cc33",handoff:"#ffff00"},
+  "Slate Dark":        {bg:"#0a1120",card:"#0f172a",card2:"#1e293b",border:"#334155",text:"#f1f5f9",muted:"#64748b",start:"#22d3ee",stop:"#f43f5e",sync:"#818cf8",handoff:"#fb923c"},
+  "Amber Dark":        {bg:"#120d00",card:"#1a1000",card2:"#2a1a00",border:"#7a5500",text:"#ffe88a",muted:"#7a6020",start:"#fbbf24",stop:"#ef4444",sync:"#f59e0b",handoff:"#84cc16"},
+  "Forest Dark":       {bg:"#080f08",card:"#0d1a0d",card2:"#142414",border:"#254025",text:"#d4edda",muted:"#4a7a4a",start:"#86efac",stop:"#fca5a5",sync:"#6ee7b7",handoff:"#fde68a"},
+  "Light (Default)":   {bg:"#f5f5f7",card:"#ffffff",card2:"#f0f0f5",border:"#e0e0e8",text:"#1a1a2a",muted:"#888",   start:"#16a34a",stop:"#dc2626",sync:"#2563eb",handoff:"#d97706"},
+};
+
+function applyTheme(name) {
+  const t = THEMES[name] || THEMES["Dark (Default)"];
+  const r = document.documentElement.style;
+  Object.entries({
+    bg:t.bg, card:t.card, card2:t.card2, border:t.border,
+    text:t.text, muted:t.muted, start:t.start,
+    stop:t.stop, sync:t.sync, handoff:t.handoff
+  }).forEach(([k,v]) => r.setProperty(`--${k}`, v));
+
+  // Set chip styles inline so they always match the current sync color
+  // — avoids the lag where var(--sync) resolves to the OLD theme's color
+  document.querySelectorAll(".tchip").forEach(c => {
+    const active = c.dataset.n === name;
+    c.classList.toggle("on", active);
+    if (active) {
+      c.style.background   = t.sync;
+      c.style.borderColor  = t.sync;
+      c.style.color        = "#000";
+      c.style.fontWeight   = "700";
+    } else {
+      c.style.background   = "";
+      c.style.borderColor  = "";
+      c.style.color        = "";
+      c.style.fontWeight   = "";
+    }
+  });
+}
+
+// Build theme chips
+const tg = document.getElementById("tgrid");
+Object.keys(THEMES).forEach(name => {
+  const b = document.createElement("button");
+  b.className = "tchip"; b.textContent = name; b.dataset.n = name;
+  b.onclick = () => { applyTheme(name); saveSetting("theme", name); };
+  tg.appendChild(b);
+});
+
+/* ── API helpers ────────────────────────────────────────── */
+const BASE = "http://localhost:8765";
+
+async function api(path, opts={}) {
+  try {
+    const r = await fetch(BASE + path, opts);
+    return r.ok ? r.json() : null;
+  } catch { return null; }
+}
+
+/* ── State ──────────────────────────────────────────────── */
+let cfg     = {};
+let running = false;
+let uStart  = null;
+let upTick  = null;
+let logPos  = 0;          // how many log lines we've already displayed
+let hist    = [];
+let hIdx    = -1;
+
+/* ── Log helpers ────────────────────────────────────────── */
+function addLine(id, text, cls="") {
+  const box = document.getElementById(id);
+  if (!box) return;
+  const d = document.createElement("div");
+  d.className = "ll " + (cls || "");
+  d.textContent = text;
+  box.appendChild(d);
+  while (box.children.length > 900) box.removeChild(box.firstChild);
+  box.scrollTop = box.scrollHeight;
+}
+function both(text, cls) {
+  addLine("dash-log", text, cls);
+  addLine("con-log",  text, cls);
+}
+
+/* ── Commands ───────────────────────────────────────────── */
+async function cmd(c) {
+  const r = await api("/api/command", {
+    method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({cmd:c})
+  });
+  if (r && r.ok) {
+    both(`>> ${c}`, "cmd");
+  } else {
+    both(`[err] Command failed: ${r ? r.error : "server unreachable"}`, "err");
+  }
+}
+
+function record(c) {
+  if (!c) return;
+  if (!hist.length || hist[hist.length-1] !== c) hist.push(c);
+  if (hist.length > 200) hist.shift();
+  hIdx = -1;
+}
+function hUp(el)   { if (!hist.length) return; hIdx=hIdx===-1?hist.length-1:Math.max(0,hIdx-1); el.value=hist[hIdx]; }
+function hDown(el) { if (hIdx===-1) return; hIdx++; el.value=hIdx>=hist.length?(hIdx=-1,""):hist[hIdx]; }
+
+function dsend() { const el=document.getElementById("dash-cmd"),c=el.value.trim(); if(!c)return; el.value=""; record(c); cmd(c); }
+function csend() { const el=document.getElementById("cin"),      c=el.value.trim(); if(!c)return; el.value=""; record(c); cmd(c); }
+function dkey(e) { if(e.key==="Enter")dsend(); else if(e.key==="ArrowUp"){e.preventDefault();hUp(e.target);}else if(e.key==="ArrowDown"){e.preventDefault();hDown(e.target);} }
+function ckey(e) { if(e.key==="Enter")csend(); else if(e.key==="ArrowUp"){e.preventDefault();hUp(e.target);}else if(e.key==="ArrowDown"){e.preventDefault();hDown(e.target);} }
+
+function copyLog() {
+  const lines=[...document.getElementById("dash-log").querySelectorAll(".ll")].map(d=>d.textContent).join("\n");
+  navigator.clipboard.writeText(lines);
+}
+function clearLog() {
+  ["dash-log","con-log","chat-log"].forEach(id=>{const el=document.getElementById(id);if(el)el.innerHTML="";});
+  logPos = 0;
+}
+
+/* ── Status updates ─────────────────────────────────────── */
+function setRunning(on) {
+  running = on;
+  const dot=document.getElementById("status-dot"), txt=document.getElementById("status-txt");
+  dot.className  = on ? "on" : "";
+  txt.textContent = on ? "Running" : "Stopped";
+  if (on && !upTick) { uStart=uStart||Date.now(); upTick=setInterval(tickUptime,1000); }
+  if (!on) { clearInterval(upTick); upTick=null; document.getElementById("s-uptime").textContent="--"; }
+}
+function tickUptime() {
+  if (!uStart) return;
+  const s=Math.floor((Date.now()-uStart)/1000);
+  const h=String(Math.floor(s/3600)).padStart(2,"0");
+  const m=String(Math.floor((s%3600)/60)).padStart(2,"0");
+  const sc=String(s%60).padStart(2,"0");
+  document.getElementById("s-uptime").textContent=`${h}:${m}:${sc}`;
+}
+
+/* ── Poll server status + new log lines every 2 s ──────── */
+async function poll() {
+  // Status
+  const st = await api("/api/status");
+  if (st) {
+    const wasRunning = running;
+    setRunning(st.running);
+    if (st.running && !wasRunning) {
+      uStart = st.uptime ? Date.now() - st.uptime*1000 : Date.now();
+    }
+    if (!st.running) uStart = null;
+
+    // TPS
+    const tpsEl = document.getElementById("s-tps");
+    const v = parseFloat(st.tps);
+    tpsEl.textContent = st.tps;
+    tpsEl.style.color = isNaN(v) ? "var(--muted)" : v>=18?"var(--start)":v>=15?"var(--handoff)":"var(--stop)";
+
+    document.getElementById("s-players").textContent = st.players || "0";
+    document.getElementById("s-ram").textContent     = st.ram_srv || "--";
+  }
+
+  // New log lines
+  const lr = await api(`/api/log?since=${logPos}`);
+  if (lr && lr.lines.length) {
+    logPos = lr.total;
+    lr.lines.forEach(({msg, cls}) => {
+      both(msg, cls);
+      if (/joined|left the game|<[^>]+>|DEATH/i.test(msg))
+        addLine("chat-log", msg, cls);
+    });
+  }
+}
+
+/* ── Settings ───────────────────────────────────────────── */
+async function saveSetting(key, value) {
+  cfg[key] = value;
+  await api("/api/settings", {
+    method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({[key]: value})
+  });
+}
+
+function fillSettings(s) {
+  cfg = s;
+  const g=(id,k,fb="")=>{const el=document.getElementById(id);if(el)el.value=s[k]??fb;};
+  g("s-srv","srv_path"); g("s-java","java_path");
+  g("s-repo","repo_url"); g("s-mins","auto_upload_mins",10);
+  const cb=(id,k)=>{const el=document.getElementById(id);if(el)el.checked=!!(s[k]);};
+  cb("s-uos","upload_on_stop"); cb("s-au","auto_upload");
+  // Apply saved theme immediately so page loads with correct colors
+  if (s.theme) applyTheme(s.theme);
+}
+
+/* ── Network tab ────────────────────────────────────────── */
+function buildNetwork(s) {
+  const port = s.server_port || "25565";
+
+  function card(label, sub, val, color) {
+    return `<div class="ip-card" style="border:2px solid ${color}">
+      <div class="ip-label" style="color:${color}">${label}</div>
+      <div class="ip-sub">${sub}</div>
+      <div class="ip-val">${val}</div>
+      <button class="btn sm" style="background:${color};color:#000;justify-content:center"
+              onclick="navigator.clipboard.writeText('${val}')">Copy IP</button>
+    </div>`;
+  }
+
+  // External IP — fetch from ipify
+  fetch("https://api.ipify.org?format=json")
+    .then(r=>r.json()).then(d=>{
+      document.getElementById("ip-grid").innerHTML =
+        card("Local (LAN)",         "For players on your WiFi",          `(LAN IP):${port}`,     "var(--start)") +
+        card("External (Internet)", "For friends outside your network",  `${d.ip}:${port}`,      "var(--sync)")  +
+        card("Localhost",           "For testing on this PC",            `localhost:${port}`,     "var(--handoff)");
+    }).catch(()=>{
+      document.getElementById("ip-grid").innerHTML =
+        card("Local (LAN)",   "For players on your WiFi", `(LAN IP):${port}`,  "var(--start)") +
+        card("External",      "Could not fetch IP",        "unavailable",        "var(--muted)") +
+        card("Localhost",     "For testing on this PC",    `localhost:${port}`, "var(--handoff)");
+    });
+}
+
+/* ── Tab switching ──────────────────────────────────────── */
+function showTab(name) {
+  document.querySelectorAll(".page").forEach(p=>p.classList.remove("active"));
+  document.querySelectorAll(".tab") .forEach(b=>b.classList.remove("active"));
+  document.getElementById(`page-${name}`).classList.add("active");
+  document.querySelectorAll(".tab").forEach(b=>{if(b.dataset.tab===name)b.classList.add("active");});
+  if (name==="network") buildNetwork(cfg);
+}
+
+/* ── Boot ───────────────────────────────────────────────── */
+(async function boot() {
+  const s = await api("/api/settings");
+  if (s) {
+    fillSettings(s);   // applies saved theme internally
+  } else {
+    both("[err] Cannot reach Python server on localhost:8765", "err");
+    both("Make sure launcher.pyw is running and the browser_ui addon is loaded.", "");
+  }
+  // First poll immediately
+  await poll();
+  // Then every 2 s
+  setInterval(poll, 2000);
+})();
+</script>
+</body>
+</html>
