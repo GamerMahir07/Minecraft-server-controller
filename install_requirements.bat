@@ -39,28 +39,22 @@ echo.
 
 echo  Installing customtkinter...
 python -m pip install customtkinter
-if errorlevel 1 (
-    echo  [!] Failed to install customtkinter.
-) else (
-    echo  [OK] customtkinter installed.
-)
-echo.
+...
 
 echo  Installing psutil...
 python -m pip install psutil
-if errorlevel 1 (
-    echo  [!] Failed to install psutil.
-) else (
-    echo  [OK] psutil installed.
-)
-echo.
+...
 
 echo  Installing matplotlib...
 python -m pip install matplotlib
+...
+
+echo  Installing tkinterdnd2...
+python -m pip install tkinterdnd2
 if errorlevel 1 (
-    echo  [!] Failed to install matplotlib.
+    echo  [!] Failed to install tkinterdnd2.
 ) else (
-    echo  [OK] matplotlib installed.
+    echo  [OK] tkinterdnd2 installed.
 )
 echo.
 
