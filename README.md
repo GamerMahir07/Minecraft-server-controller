@@ -118,23 +118,6 @@ Important globals inside the script:
 
 ---
 
-## Folder Structure
-
-Example:
-
-```text
-project/
-├── launcher.pyw
-├── server/
-│   ├── server.jar
-│   ├── eula.txt
-│   └── world/
-├── addons/
-└── logs/
-```
-
----
-
 ## Addons
 
 The launcher supports loading custom addon modules dynamically.
