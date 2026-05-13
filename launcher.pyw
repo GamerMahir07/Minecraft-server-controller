@@ -61,7 +61,7 @@ THEMES = {
     "Sunset Dark":               {"appearance":"dark", "bg":"#1a0a00","card":"#2a1200","border":"#7c3a10","text":"#ffe4c4","muted":"#8a5030","start":"#4ade80","stop":"#f87171","sync":"#c084fc","handoff":"#fb923c"},
     "Sunset Light":              {"appearance":"light","bg":"#fff7ed","card":"#ffffff","border":"#fed7aa","text":"#1c0a00","muted":"#9a6030","start":"#16a34a","stop":"#e11d48","sync":"#7c3aed","handoff":"#ea580c"},
     # ── Obsidian ──────────────────────────────────────────
-    "Obsidian Dark":             {"appearance":"dark", "bg":"#020202","card":"#070710","border":"#13132a","text":"#cdd6f4","muted":"#3a3a52","start":"#a6e3a1","stop":"#f38ba8","sync":"#89b4fa","handoff":"#fab387"},
+    "Obsidian Dark":             {"appearance":"dark", "bg":"#080808","card":"#101010","border":"#1e1e2e","text":"#D8D8D8","muted":"#3a3a52","start":"#a6e3a1","stop":"#f38ba8","sync":"#89b4fa","handoff":"#fab387"},
     "Obsidian Light":            {"appearance":"light","bg":"#f0f0f8","card":"#ffffff","border":"#c5c5e0","text":"#1e1e2e","muted":"#6e7090","start":"#40a02b","stop":"#d20f39","sync":"#1e66f5","handoff":"#e49320"},
     # ── Ender Night ───────────────────────────────────────
     "Ender Night Dark":          {"appearance":"dark", "bg":"#000000","card":"#0d0010","border":"#3b0060","text":"#e8b4ff","muted":"#6a2a8a","start":"#bf7fff","stop":"#ff5f87","sync":"#d68fff","handoff":"#ffb347"},
