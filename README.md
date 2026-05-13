@@ -1,125 +1,227 @@
-# MC CTRL — Tauri + Vanilla HTML UI
+# Minecraft Server Launcher
 
-The lightest possible native window frontend for MC CTRL.
-**No Node.js. No npm. No node_modules. No bundler.**
-Just one HTML file and a Rust backend.
+A modern GUI launcher for managing Minecraft Java servers on Windows using Python + CustomTkinter.
 
-## File sizes
+This launcher gives you a clean dashboard for starting, stopping, monitoring, and managing servers without touching the terminal every 5 seconds.
 
-| What | Size |
+---
+
+## Features
+
+### Core Server Control
+- Start and stop Minecraft servers
+- Send console commands directly from the GUI
+- Live server logs and chat monitoring
+- Automatic status updates
+- Java process detection
+- Git sync support for server files
+
+### Performance Monitoring
+- Real-time server performance tracking
+- CPU and memory monitoring
+- Dedicated performance panel
+- Quick status indicators
+
+### Networking Tools
+- Local IP detection
+- External IP lookup
+- Easy copy-to-clipboard connection info
+- Configurable server port
+
+### playit.gg Integration
+- Built-in support for playit.gg tunnels
+- Public server access without port forwarding
+- Tunnel log viewer
+- Automatic tunnel detection
+- Claim link parsing
+
+### Multi Server Control
+- Control up to 3 Minecraft servers at once
+- Separate logs and controls for each instance
+- Independent server management
+
+### Addon System
+- Dynamic addon/module loading
+- Expand launcher functionality with custom Python addons
+
+### UI & Customization
+- Multiple built-in themes
+- Dark and light variants
+- Fullscreen mode
+- Rebuildable responsive UI
+- Toggleable chat and performance panels
+
+### Extra Utilities
+- Drag-and-drop support (via tkinterdnd2)
+- Toast notifications
+- Auto upload scheduling
+- Clipboard utilities
+- EULA checking
+- Persistent settings system
+
+---
+
+## Requirements
+
+- Windows 10/11
+- Python 3.10+
+- Java 21+
+- Minecraft Java Server files
+
+Python packages:
+
+```bash
+pip install customtkinter tkinterdnd2
+```
+
+---
+
+## Installation
+
+Clone the repository:
+
+```bash
+git clone https://github.com/GamerMahir07/minecraft-server.git
+cd minecraft-server
+```
+
+Install dependencies:
+
+```bash
+pip install customtkinter tkinterdnd2
+```
+
+Edit the paths inside `launcher.pyw`:
+
+```python
+SRV_PATH  = r"C:\path\to\your\server"
+JAVA_PATH = r"C:\path\to\java.exe"
+```
+
+Run the launcher:
+
+```bash
+python launcher.pyw
+```
+
+---
+
+## Configuration
+
+Important globals inside the script:
+
+| Variable | Description |
 |---|---|
-| `ui/index.html` | ~20 KB |
-| `mc-ctrl-ui.exe` (release build) | ~3 MB |
-| `node_modules/` | **0 bytes — doesn't exist** |
-
-Compare to the React version: ~150 MB of node_modules, 8 MB exe.
+| `SRV_PATH` | Minecraft server folder |
+| `JAVA_PATH` | Path to Java executable |
+| `REPO_URL` | Git repository used for syncing |
 
 ---
 
-## Prerequisites (one-time installs)
+## Folder Structure
 
-### 1. Rust + Cargo
-https://rustup.rs — download and run `rustup-init.exe`
-```
-rustc --version   # should print 1.70+
-```
+Example:
 
-### 2. Visual Studio C++ Build Tools
-https://visualstudio.microsoft.com/visual-cpp-build-tools/
-Select **Desktop development with C++** during install.
-
-### 3. WebView2 Runtime
-Already on every Windows 10 (post-2021) and Windows 11 machine.
-If missing: https://developer.microsoft.com/microsoft-edge/webview2/
-
-That's it. No Node, no npm, no Python packages.
-
----
-
-## Build
-
-Open a terminal in this `webui/` folder:
-
-```bat
-cargo tauri build
-```
-
-First build: **4–7 minutes** (Rust compiles from scratch).
-Subsequent builds: **20–40 seconds**.
-
-Output:
-```
-webui\src-tauri\target\release\mc-ctrl-ui.exe
-```
-
-Copy it next to `launcher.pyw`:
-```bat
-copy src-tauri\target\release\mc-ctrl-ui.exe ..\mc-ctrl-ui.exe
+```text
+project/
+├── launcher.pyw
+├── server/
+│   ├── server.jar
+│   ├── eula.txt
+│   └── world/
+├── addons/
+└── logs/
 ```
 
 ---
 
-## Dev mode (live reload)
+## Addons
 
-```bat
-cargo tauri dev
-```
+The launcher supports loading custom addon modules dynamically.
 
-Edit `ui/index.html` and save — the window reloads instantly.
-No build step needed during development.
+You can create Python addons to extend functionality such as:
 
----
-
-## How it works
-
-```
-ui/index.html          ← the entire frontend (HTML + CSS + JS, one file)
-src-tauri/
-  Cargo.toml           ← Rust dependencies
-  tauri.conf.json      ← points the window at ui/index.html
-  src/main.rs          ← backend: settings IO, server process, log streaming
-```
-
-The Tauri window is just a WebView2 frame pointed at the local HTML file.
-The JS calls `invoke("command_name", {args})` to talk to the Rust backend.
-The Rust backend emits events (`"log"`, `"server-started"`, `"server-stopped"`)
-that the JS listens to with `listen("event-name", handler)`.
-
-Settings are read/written from the **same `settings.json`** as the Python
-launcher, so switching between UIs requires no reconfiguration.
+- Backup systems
+- Discord integration
+- Modpack helpers
+- Custom automation
+- Remote tools
 
 ---
 
-## Project structure
+## playit.gg Setup
 
-```
-webui/
-├── README.md              this file
-├── src-tauri/
-│   ├── Cargo.toml         Rust deps (tauri, tokio, serde_json only)
-│   ├── tauri.conf.json    window config + permissions
-│   ├── icons/             app icon (copy icon.ico + icon.png here)
-│   └── src/
-│       └── main.rs        Rust backend
-└── ui/
-    └── index.html         complete frontend
-```
+1. Install the playit.gg client
+2. Open the Playit tab
+3. Select the executable path
+4. Start a tunnel
+5. Share the generated `.ply.gg` address with friends
+
+---
+
+## Themes
+
+Included themes:
+
+- Dark (Default)
+- Light (Default)
+- Midnight Blue
+- Creeper Green
+- Nether Red
+- Ocean
+- Sunset
+
+Both dark and light versions are available for most themes.
+
+---
+
+## Planned Features
+
+- Automatic backups
+- Mod/plugin manager
+- World manager
+- Remote dashboard
+- Docker support
+- Cross-platform support
+- Integrated installer
 
 ---
 
 ## Troubleshooting
 
-**`error: linker 'link.exe' not found`**
-→ Install Visual Studio C++ Build Tools (step 2 above).
+### Server does not start
+- Check Java path
+- Verify server files exist
+- Accept the Minecraft EULA
+- Make sure the server jar works normally
 
-**White/blank window**
-→ WebView2 is starting up. Wait 2–3 seconds.
-  Run from terminal to see errors: `mc-ctrl-ui.exe`
+### playit.gg not working
+- Verify the executable path
+- Check firewall permissions
+- Restart the tunnel client
 
-**Settings not loading**
-→ `settings.json` must be in the same folder as `mc-ctrl-ui.exe`,
-  OR set the environment variable `MCCTRL_SETTINGS=C:\path\to\settings.json`.
+### Missing modules
 
-**`invoke is not defined`**
-→ You're opening `index.html` directly in a browser instead of through Tauri.
-  The `invoke` bridge only works inside the Tauri window. Use `cargo tauri dev`.
+Install dependencies again:
+
+```bash
+pip install -U customtkinter tkinterdnd2
+```
+
+---
+
+## License
+
+MIT License
+
+---
+
+## Credits
+
+Built by entity["people","Md. Mahir Zawad Khan","Minecraft launcher developer"] using:
+
+- Python
+- CustomTkinter
+- Minecraft Java Edition
+- playit.gg
+
