@@ -138,8 +138,106 @@ THEMES = {
     # ── CB: Monochrome ────────────────────────────────────
     "CB: Monochrome Light":      {"appearance":"light","bg":"#ffffff","card":"#f0f0f0","border":"#999999","text":"#000000","muted":"#666666","start":"#222222","stop":"#777777","sync":"#444444","handoff":"#555555"},
     "CB: Monochrome Dark":       {"appearance":"dark", "bg":"#111111","card":"#1e1e1e","border":"#555555","text":"#eeeeee","muted":"#888888","start":"#cccccc","stop":"#888888","sync":"#aaaaaa","handoff":"#bbbbbb"},
+    # ── Pastel ────────────────────────────────────────────
+    "Pastel Light":              {"appearance":"light","bg":"#fdf4ff","card":"#ffffff","border":"#e9d5ff","text":"#3b0764","muted":"#a78bca","start":"#7c3aed","stop":"#e11d48","sync":"#2563eb","handoff":"#d97706"},
+    "Pastel Dark":               {"appearance":"dark", "bg":"#1a0a2e","card":"#2d1b4e","border":"#5b3a8a","text":"#e9d5ff","muted":"#9d7ac0","start":"#a78bfa","stop":"#fb7185","sync":"#60a5fa","handoff":"#fbbf24"},
+    # ── Teal ──────────────────────────────────────────────
+    "Teal Dark":                 {"appearance":"dark", "bg":"#00100e","card":"#001a18","border":"#00524a","text":"#a0fff5","muted":"#2a7a72","start":"#00d4c0","stop":"#ff4466","sync":"#00aaff","handoff":"#ffcc00"},
+    "Teal Light":                {"appearance":"light","bg":"#eefffe","card":"#ffffff","border":"#80d8d0","text":"#002420","muted":"#4a9a90","start":"#007a70","stop":"#cc2244","sync":"#0066aa","handoff":"#cc8800"},
+    # ── Peach ─────────────────────────────────────────────
+    "Peach Light":               {"appearance":"light","bg":"#fff8f5","card":"#ffffff","border":"#fed7aa","text":"#431407","muted":"#c47c5a","start":"#c2410c","stop":"#be123c","sync":"#9333ea","handoff":"#ca8a04"},
+    "Peach Dark":                {"appearance":"dark", "bg":"#180a00","card":"#2c1200","border":"#7c2d12","text":"#ffedd5","muted":"#c47c5a","start":"#fb923c","stop":"#f43f5e","sync":"#c084fc","handoff":"#fbbf24"},
+    # ── Sky ───────────────────────────────────────────────
+    "Sky Light":                 {"appearance":"light","bg":"#f0f9ff","card":"#ffffff","border":"#bae6fd","text":"#0c4a6e","muted":"#7dd3fc","start":"#0284c7","stop":"#e11d48","sync":"#7c3aed","handoff":"#d97706"},
+    "Sky Dark":                  {"appearance":"dark", "bg":"#020d18","card":"#082032","border":"#0c4a6e","text":"#e0f2fe","muted":"#38bdf8","start":"#38bdf8","stop":"#f87171","sync":"#a78bfa","handoff":"#fbbf24"},
+    # ── Lilac ─────────────────────────────────────────────
+    "Lilac Light":               {"appearance":"light","bg":"#faf5ff","card":"#ffffff","border":"#e9d5ff","text":"#3b0764","muted":"#c4b5fd","start":"#7c3aed","stop":"#db2777","sync":"#0284c7","handoff":"#d97706"},
+    "Lilac Dark":                {"appearance":"dark", "bg":"#120820","card":"#1e1035","border":"#4c1d95","text":"#ede9fe","muted":"#a78bfa","start":"#c4b5fd","stop":"#f472b6","sync":"#60a5fa","handoff":"#fbbf24"},
+    # ── Honey ─────────────────────────────────────────────
+    "Honey Light":               {"appearance":"light","bg":"#fffbeb","card":"#ffffff","border":"#fde68a","text":"#1c1400","muted":"#d9a22e","start":"#d97706","stop":"#dc2626","sync":"#0284c7","handoff":"#65a30d"},
+    "Honey Dark":                {"appearance":"dark", "bg":"#160e00","card":"#241800","border":"#92400e","text":"#fef3c7","muted":"#d97706","start":"#fbbf24","stop":"#f87171","sync":"#38bdf8","handoff":"#86efac"},
+    # ── Ruby ──────────────────────────────────────────────
+    "Ruby Light":                {"appearance":"light","bg":"#fff1f2","card":"#ffffff","border":"#fecdd3","text":"#4c0519","muted":"#fb7185","start":"#be123c","stop":"#dc2626","sync":"#0284c7","handoff":"#d97706"},
+    "Ruby Dark":                 {"appearance":"dark", "bg":"#1a0008","card":"#2d000f","border":"#881337","text":"#ffe4e6","muted":"#fb7185","start":"#fb7185","stop":"#ef4444","sync":"#38bdf8","handoff":"#fbbf24"},
+    # ── Jade ──────────────────────────────────────────────
+    "Jade Light":                {"appearance":"light","bg":"#f0fdf4","card":"#ffffff","border":"#bbf7d0","text":"#052e16","muted":"#6ee7b7","start":"#059669","stop":"#dc2626","sync":"#0284c7","handoff":"#d97706"},
+    "Jade Dark":                 {"appearance":"dark", "bg":"#011810","card":"#022c1e","border":"#065f46","text":"#d1fae5","muted":"#34d399","start":"#34d399","stop":"#f87171","sync":"#38bdf8","handoff":"#fbbf24"},
+    # ── Dusk ──────────────────────────────────────────────
+    "Dusk Dark":                 {"appearance":"dark", "bg":"#0a0014","card":"#130022","border":"#38006b","text":"#e8d5ff","muted":"#9d74cc","start":"#c084fc","stop":"#f472b6","sync":"#818cf8","handoff":"#fb923c"},
+    "Dusk Light":                {"appearance":"light","bg":"#f9f0ff","card":"#ffffff","border":"#d8b4fe","text":"#1e0050","muted":"#9d74cc","start":"#7c3aed","stop":"#be185d","sync":"#4f46e5","handoff":"#d97706"},
+    # ── Espresso ──────────────────────────────────────────
+    "Espresso Dark":             {"appearance":"dark", "bg":"#100800","card":"#1a1000","border":"#3d2000","text":"#f5e6c8","muted":"#7a5a30","start":"#d4a96e","stop":"#e05050","sync":"#7eb8d0","handoff":"#e8c060"},
+    "Espresso Light":            {"appearance":"light","bg":"#fdf8f0","card":"#fff9f2","border":"#d4b896","text":"#1c0e00","muted":"#8a6a40","start":"#92400e","stop":"#b91c1c","sync":"#0369a1","handoff":"#b45309"},
+    # ── Steel ─────────────────────────────────────────────
+    "Steel Light":               {"appearance":"light","bg":"#f8fafc","card":"#ffffff","border":"#cbd5e1","text":"#0f172a","muted":"#94a3b8","start":"#0284c7","stop":"#e11d48","sync":"#7c3aed","handoff":"#d97706"},
+    "Steel Dark":                {"appearance":"dark", "bg":"#0d1117","card":"#161b22","border":"#30363d","text":"#e6edf3","muted":"#8b949e","start":"#3fb950","stop":"#f85149","sync":"#58a6ff","handoff":"#d29922"},
+    # ── Cherry Blossom ────────────────────────────────────
+    "Cherry Blossom Light":      {"appearance":"light","bg":"#fff8fa","card":"#ffffff","border":"#fecdd3","text":"#3d0015","muted":"#f9a8d4","start":"#e11d48","stop":"#be123c","sync":"#db2777","handoff":"#f59e0b"},
+    "Cherry Blossom Dark":       {"appearance":"dark", "bg":"#1a0010","card":"#2d0018","border":"#9f1239","text":"#ffe4e6","muted":"#fda4af","start":"#fb7185","stop":"#f43f5e","sync":"#e879f9","handoff":"#fbbf24"},
+    # ── Glacier ───────────────────────────────────────────
+    "Glacier Light":             {"appearance":"light","bg":"#f0fdff","card":"#ffffff","border":"#a5f3fc","text":"#083344","muted":"#67e8f9","start":"#0891b2","stop":"#e11d48","sync":"#6366f1","handoff":"#f59e0b"},
+    "Glacier Dark":              {"appearance":"dark", "bg":"#001a22","card":"#002e3a","border":"#164e63","text":"#cffafe","muted":"#22d3ee","start":"#22d3ee","stop":"#f87171","sync":"#818cf8","handoff":"#fbbf24"},
+    # ── Tangerine ─────────────────────────────────────────
+    "Tangerine Light":           {"appearance":"light","bg":"#fff7ed","card":"#ffffff","border":"#fed7aa","text":"#1c0a00","muted":"#fb923c","start":"#ea580c","stop":"#dc2626","sync":"#0284c7","handoff":"#65a30d"},
+    "Tangerine Dark":            {"appearance":"dark", "bg":"#1a0800","card":"#2c1200","border":"#c2410c","text":"#ffedd5","muted":"#fb923c","start":"#fb923c","stop":"#ef4444","sync":"#38bdf8","handoff":"#86efac"},
+    # ── Parchment ─────────────────────────────────────────
+    "Parchment Light":           {"appearance":"light","bg":"#fdf8ee","card":"#fef9f0","border":"#d6c89a","text":"#2a1e00","muted":"#a08840","start":"#7a5a00","stop":"#b91c1c","sync":"#0369a1","handoff":"#b45309"},
+    "Parchment Dark":            {"appearance":"dark", "bg":"#15100a","card":"#201a10","border":"#5a4820","text":"#f0e4c0","muted":"#8a7040","start":"#d4aa60","stop":"#e05050","sync":"#70a8c0","handoff":"#d4aa30"},
+    # ── Volcanic ──────────────────────────────────────────
+    "Volcanic Dark":             {"appearance":"dark", "bg":"#0a0000","card":"#160000","border":"#7f1d1d","text":"#fecaca","muted":"#991b1b","start":"#ef4444","stop":"#f97316","sync":"#fbbf24","handoff":"#a3e635"},
+    "Volcanic Light":            {"appearance":"light","bg":"#fff5f5","card":"#ffffff","border":"#fca5a5","text":"#1a0000","muted":"#ef4444","start":"#dc2626","stop":"#c2410c","sync":"#d97706","handoff":"#65a30d"},
+    # ── Deep Sea ──────────────────────────────────────────
+    "Deep Sea Dark":             {"appearance":"dark", "bg":"#000d1a","card":"#001a33","border":"#003366","text":"#b3d9ff","muted":"#336699","start":"#0066cc","stop":"#cc0033","sync":"#00aacc","handoff":"#ffaa00"},
+    "Deep Sea Light":            {"appearance":"light","bg":"#e8f4ff","card":"#ffffff","border":"#99c9f5","text":"#001433","muted":"#6699cc","start":"#0066cc","stop":"#cc0033","sync":"#0099bb","handoff":"#cc8800"},
+    # ── Bubblegum ─────────────────────────────────────────
+    "Bubblegum Light":           {"appearance":"light","bg":"#fff0fa","card":"#ffffff","border":"#f9a8d4","text":"#2d0025","muted":"#f472b6","start":"#ec4899","stop":"#e11d48","sync":"#8b5cf6","handoff":"#f59e0b"},
+    "Bubblegum Dark":            {"appearance":"dark", "bg":"#1a0016","card":"#2d0026","border":"#9d174d","text":"#fce7f3","muted":"#f472b6","start":"#f472b6","stop":"#fb7185","sync":"#c084fc","handoff":"#fbbf24"},
+   # ── Ender Green ───────────────────────────────────────
+    "Programmer Green Dark":          {"appearance":"dark", "bg":"#000000","card":"#000d00","border":"#003b00","text":"#b4ffb4","muted":"#2a6a2a","start":"#7fff7f","stop":"#ff5f87","sync":"#7dff8f","handoff":"#ffb347"},
+    "Programmer Green Light":         {"appearance":"light","bg":"#f0fff0","card":"#ffffff","border":"#b0d4b0","text":"#002000","muted":"#408040","start":"#276327","stop":"#db2777","sync":"#2d7a2d","handoff":"#c2410c"},
+    # ── Midnight Purple ───────────────────────────────────
+    "Midnight Purple Dark":      {"appearance":"dark", "bg":"#05000f","card":"#0d0020","border":"#4c1d95","text":"#ede9fe","muted":"#7c3aed","start":"#a78bfa","stop":"#f472b6","sync":"#818cf8","handoff":"#fbbf24"},
+    "Midnight Purple Light":     {"appearance":"light","bg":"#faf5ff","card":"#ffffff","border":"#c4b5fd","text":"#1e0050","muted":"#7c3aed","start":"#6d28d9","stop":"#be185d","sync":"#4f46e5","handoff":"#d97706"},
+    # ── Cinnamon ──────────────────────────────────────────
+    "Cinnamon Light":            {"appearance":"light","bg":"#fdf5ee","card":"#ffffff","border":"#d4a57a","text":"#2a1200","muted":"#a0622a","start":"#9a3412","stop":"#b91c1c","sync":"#0369a1","handoff":"#b45309"},
+    "Cinnamon Dark":             {"appearance":"dark", "bg":"#180900","card":"#281400","border":"#92400e","text":"#fde8d0","muted":"#c47c4a","start":"#f97316","stop":"#ef4444","sync":"#38bdf8","handoff":"#fbbf24"},
+    # ── Petal ─────────────────────────────────────────────
+    "Petal Light":               {"appearance":"light","bg":"#fef9ff","card":"#ffffff","border":"#f0abfc","text":"#3b0764","muted":"#e879f9","start":"#a21caf","stop":"#e11d48","sync":"#7c3aed","handoff":"#d97706"},
+    "Petal Dark":                {"appearance":"dark", "bg":"#1a0020","card":"#2a0035","border":"#701a75","text":"#fae8ff","muted":"#e879f9","start":"#d946ef","stop":"#f43f5e","sync":"#818cf8","handoff":"#fbbf24"},
+    # ── Golden Hour ───────────────────────────────────────
+    "Golden Hour Light":         {"appearance":"light","bg":"#fffbf0","card":"#ffffff","border":"#fde68a","text":"#1c1200","muted":"#d9a520","start":"#b45309","stop":"#dc2626","sync":"#7c3aed","handoff":"#65a30d"},
+    "Golden Hour Dark":          {"appearance":"dark", "bg":"#130e00","card":"#201600","border":"#854d0e","text":"#fefce8","muted":"#d97706","start":"#eab308","stop":"#f87171","sync":"#c084fc","handoff":"#86efac"},
+    # ── Neon Nights ───────────────────────────────────────
+    "Neon Nights Dark":          {"appearance":"dark", "bg":"#050010","card":"#0d0020","border":"#330066","text":"#e8d0ff","muted":"#6600cc","start":"#cc00ff","stop":"#ff0066","sync":"#00ffcc","handoff":"#ffcc00"},
+    "Neon Nights Light":         {"appearance":"light","bg":"#f5f0ff","card":"#ffffff","border":"#cc99ff","text":"#1a0040","muted":"#8844cc","start":"#7c00cc","stop":"#cc0055","sync":"#008866","handoff":"#997700"},
+    # ── Tundra ────────────────────────────────────────────
+    "Tundra Light":              {"appearance":"light","bg":"#f5f8fa","card":"#ffffff","border":"#b0c4cc","text":"#1a2530","muted":"#7a9aaa","start":"#1d6a8a","stop":"#c0392b","sync":"#2c7a4b","handoff":"#c07a00"},
+    "Tundra Dark":               {"appearance":"dark", "bg":"#0a1218","card":"#111e26","border":"#1e3a4a","text":"#d4e8f0","muted":"#4a7a8a","start":"#4ab8d8","stop":"#e05060","sync":"#4ac880","handoff":"#e8c050"},
+    # ── Autumn ────────────────────────────────────────────
+    "Autumn Light":              {"appearance":"light","bg":"#fdf7f0","card":"#ffffff","border":"#d4a87a","text":"#2a1400","muted":"#a07040","start":"#c05010","stop":"#c0392b","sync":"#2c6080","handoff":"#c08020"},
+    "Autumn Dark":               {"appearance":"dark", "bg":"#180a00","card":"#281400","border":"#8b4513","text":"#ffecd0","muted":"#b06030","start":"#e07030","stop":"#e05050","sync":"#50a0c0","handoff":"#e0b020"},
+    # ── Abyss ─────────────────────────────────────────────
+    "Abyss Dark":                {"appearance":"dark", "bg":"#000408","card":"#00080f","border":"#001a33","text":"#80c8ff","muted":"#004488","start":"#0080ff","stop":"#ff2244","sync":"#00ccaa","handoff":"#ffaa00"},
+    "Abyss Light":               {"appearance":"light","bg":"#f0f8ff","card":"#ffffff","border":"#80b8e8","text":"#000810","muted":"#4488bb","start":"#0066cc","stop":"#cc2233","sync":"#008877","handoff":"#bb8800"},
+    # ── Hazel ─────────────────────────────────────────────
+    "Hazel Light":               {"appearance":"light","bg":"#faf8f5","card":"#ffffff","border":"#c8b89a","text":"#2a2015","muted":"#8a7a60","start":"#5a4020","stop":"#b91c1c","sync":"#1d4ed8","handoff":"#b45309"},
+    "Hazel Dark":                {"appearance":"dark", "bg":"#141008","card":"#1e1810","border":"#5a4830","text":"#ecdcc8","muted":"#8a7050","start":"#d0a870","stop":"#e05050","sync":"#60a0d0","handoff":"#d8b040"},
+    # ── Deep Space ────────────────────────────────────────
+    "Deep Space Dark":           {"appearance":"dark", "bg":"#00000a","card":"#00000f","border":"#0a0a2a","text":"#c8c8ff","muted":"#4444aa","start":"#6688ff","stop":"#ff4466","sync":"#44ddff","handoff":"#ffcc44"},
+    "Deep Space Light":          {"appearance":"light","bg":"#f0f0ff","card":"#ffffff","border":"#9090cc","text":"#00001a","muted":"#5555aa","start":"#3344cc","stop":"#cc2244","sync":"#0088cc","handoff":"#aa7700"},
+    # ── Moss ──────────────────────────────────────────────
+    "Moss Light":                {"appearance":"light","bg":"#f4f9f0","card":"#ffffff","border":"#a0c090","text":"#0f2010","muted":"#607850","start":"#3a6030","stop":"#c0392b","sync":"#1d6080","handoff":"#b08020"},
+    "Moss Dark":                 {"appearance":"dark", "bg":"#0a1208","card":"#101e0e","border":"#204020","text":"#d0e8c0","muted":"#608050","start":"#70c050","stop":"#e05050","sync":"#50a0c0","handoff":"#d0b840"},
+    # ── Tokyonight ────────────────────────────────────────
+    "Tokyonight Dark":           {"appearance":"dark", "bg":"#1a1b2e","card":"#16213e","border":"#0f3460","text":"#a9b1d6","muted":"#414868","start":"#73daca","stop":"#f7768e","sync":"#7aa2f7","handoff":"#ff9e64"},
+    "Tokyonight Light":          {"appearance":"light","bg":"#d5d6db","card":"#ffffff","border":"#a8aecb","text":"#343b58","muted":"#9699a6","start":"#33635c","stop":"#8c4351","sync":"#34548a","handoff":"#8f5e15"},
+    # ── Frostbite ─────────────────────────────────────────
+    "Frostbite Dark":            {"appearance":"dark", "bg":"#050f1a","card":"#0a1e2e","border":"#1a4060","text":"#e0f8ff","muted":"#3080aa","start":"#00c8ff","stop":"#ff4488","sync":"#88ddff","handoff":"#ffdd44"},
+    "Frostbite Light":           {"appearance":"light","bg":"#e8f8ff","card":"#ffffff","border":"#88ccee","text":"#001830","muted":"#4499bb","start":"#0088cc","stop":"#cc2266","sync":"#5588ff","handoff":"#cc9900"},
+    # ── ULTRA ─────────────────────────────────────────────
+    "Ultra Black Dark":          {"appearance":"dark", "bg":"#000000","card":"#050505","border":"#0f0f0f","text":"#ffffff","muted":"#333333","start":"#ffffff","stop":"#ff0000","sync":"#aaaaaa","handoff":"#ffff00"},
+    "Ultra White Light":         {"appearance":"light","bg":"#ffffff","card":"#ffffff","border":"#eeeeee","text":"#000000","muted":"#bbbbbb","start":"#000000","stop":"#ff0000","sync":"#444444","handoff":"#ff8800"},
 }
-
 SETTINGS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "settings.json")
 
 # ── Settings helpers ──────────────────────────────────────
@@ -193,7 +291,7 @@ show_perf          = settings.get("show_perf", True)
 fullscreen         = settings.get("fullscreen", False)
 auto_upload        = settings.get("auto_upload", False)
 backup_upload_on   = settings.get("backup_upload_on", True)
-auto_upload_mins   = settings.get("auto_upload_mins", 10)
+auto_upload_mins   = settings.get("auto_upload_mins", 5)
 upload_on_stop     = settings.get("upload_on_stop", True)
 ram_display_mode   = settings.get("ram_display_mode", "percent")
 
