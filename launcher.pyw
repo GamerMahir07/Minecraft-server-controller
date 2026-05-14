@@ -716,8 +716,7 @@ def apply_theme(name):
     current_theme_name = name; T = THEMES[name]
     update_setting("theme", name)
     ctk.set_appearance_mode(T["appearance"])
-    app.configure(fg_color=T["bg"])
-    _recolor_all(app)
+    rebuild_ui()
     try:
         if _theme_btn_refs[0] is not None:
             _theme_btn_refs[0].configure(text=f"🎨  {name}")
