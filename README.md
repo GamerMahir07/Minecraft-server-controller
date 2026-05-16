@@ -9,6 +9,7 @@ This launcher gives you a clean dashboard for starting, stopping, monitoring, an
 ## Features
 
 ### Core Server Control
+
 - Start and stop Minecraft servers
 - Send console commands directly from the GUI
 - Live server logs and chat monitoring
@@ -17,18 +18,21 @@ This launcher gives you a clean dashboard for starting, stopping, monitoring, an
 - Git sync support for server files
 
 ### Performance Monitoring
+
 - Real-time server performance tracking
 - CPU and memory monitoring
 - Dedicated performance panel
 - Quick status indicators
 
 ### Networking Tools
+
 - Local IP detection
 - External IP lookup
 - Easy copy-to-clipboard connection info
 - Configurable server port
 
 ### playit.gg Integration
+
 - Built-in support for playit.gg tunnels
 - Public server access without port forwarding
 - Tunnel log viewer
@@ -36,15 +40,18 @@ This launcher gives you a clean dashboard for starting, stopping, monitoring, an
 - Claim link parsing
 
 ### Multi Server Control
+
 - Control up to 3 Minecraft servers at once
 - Separate logs and controls for each instance
 - Independent server management
 
 ### Addon System
+
 - Dynamic addon/module loading
 - Expand launcher functionality with custom Python addons
 
 ### UI & Customization
+
 - Multiple built-in themes
 - Dark and light variants
 - Fullscreen mode
@@ -52,6 +59,7 @@ This launcher gives you a clean dashboard for starting, stopping, monitoring, an
 - Toggleable chat and performance panels
 
 ### Extra Utilities
+
 - Drag-and-drop support (via tkinterdnd2)
 - Toast notifications
 - Auto upload scheduling
@@ -111,7 +119,7 @@ python launcher.pyw
 Important globals inside the script:
 
 | Variable | Description |
-|---|---|
+| --- | --- |
 | `SRV_PATH` | Minecraft server folder |
 | `JAVA_PATH` | Path to Java executable |
 | `REPO_URL` | Git repository used for syncing |
@@ -172,12 +180,14 @@ Both dark and light versions are available for most themes.
 ## Troubleshooting
 
 ### Server does not start
+
 - Check Java path
 - Verify server files exist
 - Accept the Minecraft EULA
 - Make sure the server jar works normally
 
 ### playit.gg not working
+
 - Verify the executable path
 - Check firewall permissions
 - Restart the tunnel client
@@ -206,4 +216,3 @@ Built by entity["people","Md. Mahir Zawad Khan","Minecraft launcher develo
 - CustomTkinter
 - Minecraft Java Edition
 - playit.gg
-
