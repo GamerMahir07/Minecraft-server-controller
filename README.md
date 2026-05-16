@@ -1,218 +1,260 @@
-# Minecraft Server Launcher
+# ⛏ MC Server Controller
 
-A modern GUI launcher for managing Minecraft Java servers on Windows using Python + CustomTkinter.
+A Python-based GUI for managing a Minecraft server with integrated Git synchronization. Automates pulling world updates, launching the server with optimized Aikar JVM flags, and pushing changes back to GitHub.
 
-This launcher gives you a clean dashboard for starting, stopping, monitoring, and managing servers without touching the terminal every 5 seconds.
-
----
-
-## Features
-
-### Core Server Control
-
-- Start and stop Minecraft servers
-- Send console commands directly from the GUI
-- Live server logs and chat monitoring
-- Automatic status updates
-- Java process detection
-- Git sync support for server files
-
-### Performance Monitoring
-
-- Real-time server performance tracking
-- CPU and memory monitoring
-- Dedicated performance panel
-- Quick status indicators
-
-### Networking Tools
-
-- Local IP detection
-- External IP lookup
-- Easy copy-to-clipboard connection info
-- Configurable server port
-
-### playit.gg Integration
-
-- Built-in support for playit.gg tunnels
-- Public server access without port forwarding
-- Tunnel log viewer
-- Automatic tunnel detection
-- Claim link parsing
-
-### Multi Server Control
-
-- Control up to 3 Minecraft servers at once
-- Separate logs and controls for each instance
-- Independent server management
-
-### Addon System
-
-- Dynamic addon/module loading
-- Expand launcher functionality with custom Python addons
-
-### UI & Customization
-
-- Multiple built-in themes
-- Dark and light variants
-- Fullscreen mode
-- Rebuildable responsive UI
-- Toggleable chat and performance panels
-
-### Extra Utilities
-
-- Drag-and-drop support (via tkinterdnd2)
-- Toast notifications
-- Auto upload scheduling
-- Clipboard utilities
-- EULA checking
-- Persistent settings system
+**Runs on Windows, Linux, and macOS.**
 
 ---
 
-## Requirements
+## ✨ Features
 
-- Windows 10/11
-- Python 3.10+
-- Java 21+
-- Minecraft Java Server files
-
-Python packages:
-
-```bash
-pip install customtkinter tkinterdnd2
-```
+| Feature | Description |
+|---|---|
+| **Cross-platform** | Works on Windows, Linux, and macOS — platform-specific calls (taskkill, os.startfile, etc.) are handled automatically |
+| **Automated Git Sync** | Pulls the latest world data on startup and pushes updates when the server stops |
+| **Optimized JVM Flags** | Launches using Aikar's flags for high performance and stable garbage collection |
+| **Dual-Log Interface** | Separate Activity Log for system events and a Chat/Events box for player activity |
+| **Performance Monitor** | Live stats for TPS, RAM, CPU, latency, uptime, player count, and thread count — updated every 2 seconds |
+| **Network & IPs Panel** | Displays local, external, and localhost IPs with one-click copy buttons |
+| **Server Info Panel** | Panels for online players, plugins, and server.properties editor |
+| **playit.gg Integration** | Built-in tunnel control — start/stop the agent, auto-detect tunnel address, claim URL detection |
+| **🧩 Addons Tab** | Split-pane addon manager: list on the left, full description + settings + source preview on the right |
+| **Auto Upload** | Scheduled automatic Git push at a configurable interval |
+| **30+ Themes** | Visual presets including Obsidian, Midnight Blue, Dracula, Nord, Matrix, Cyberpunk, and more |
+| **Multi CTRL** | Control up to 3 independent server instances simultaneously from one window |
+| **Live Console** | Type server commands directly into the app and send them to the running server |
 
 ---
 
-## Installation
+## 📋 Requirements
 
-Clone the repository:
+| Requirement | Notes |
+|---|---|
+| **Python 3.x** | Must be on PATH |
+| **Git** | Must be on PATH |
+| **Java 21** | See platform notes below |
+| **customtkinter** | `pip install customtkinter` |
+| **psutil** | `pip install psutil` |
+
+---
+
+## 🚀 Quick Start
+
+### 1. Clone the repository
 
 ```bash
 git clone https://github.com/GamerMahir07/minecraft-server.git
-cd minecraft-server
 ```
 
-Install dependencies:
+### 2. Install Python dependencies
 
+**Windows** — run the included batch file:
+```
+install_requirements.bat
+```
+
+**Linux / macOS** — run directly:
 ```bash
-pip install customtkinter tkinterdnd2
+pip install customtkinter psutil
 ```
 
-Edit the paths inside `launcher.pyw`:
+### 3. Configure your paths
+
+Open the app and go to **⚙ Settings → Server** to set:
+
+- **Server path** — folder containing `server.jar`
+- **Java path** — path to your `java` executable
+- **GitHub repo URL** — remote repo for world backup
+
+Or edit these defaults at the top of `launcher.pyw`:
 
 ```python
-SRV_PATH  = r"C:\path\to\your\server"
-JAVA_PATH = r"C:\path\to\java.exe"
+SRV_PATH  = "/path/to/your/server"
+JAVA_PATH = "java"          # or full path if not on PATH
+REPO_URL  = "https://github.com/you/your-repo"
 ```
 
-Run the launcher:
+### 4. Run the launcher
 
+**Windows:**
 ```bash
-python launcher.pyw
+pythonw launcher.pyw
 ```
 
----
-
-## Configuration
-
-Important globals inside the script:
-
-| Variable | Description |
-| --- | --- |
-| `SRV_PATH` | Minecraft server folder |
-| `JAVA_PATH` | Path to Java executable |
-| `REPO_URL` | Git repository used for syncing |
-
----
-
-## Addons
-
-The launcher supports loading custom addon modules dynamically.
-
-You can create Python addons to extend functionality such as:
-
-- Backup systems
-- Discord integration
-- Modpack helpers
-- Custom automation
-- Remote tools
-
----
-
-## playit.gg Setup
-
-1. Install the playit.gg client
-2. Open the Playit tab
-3. Select the executable path
-4. Start a tunnel
-5. Share the generated `.ply.gg` address with friends
-
----
-
-## Themes
-
-Included themes:
-
-- Dark (Default)
-- Light (Default)
-- Midnight Blue
-- Creeper Green
-- Nether Red
-- Ocean
-- Sunset
-
-Both dark and light versions are available for most themes.
-
----
-
-## Planned Features
-
-- Mod/plugin manager
-- World manager
-- Remote dashboard
-- Docker support
-- Cross-platform support
-- Integrated installer
-
----
-
-## Troubleshooting
-
-### Server does not start
-
-- Check Java path
-- Verify server files exist
-- Accept the Minecraft EULA
-- Make sure the server jar works normally
-
-### playit.gg not working
-
-- Verify the executable path
-- Check firewall permissions
-- Restart the tunnel client
-
-### Missing modules
-
-Install dependencies again:
-
+**Linux / macOS:**
 ```bash
-pip install -U customtkinter tkinterdnd2
+python3 launcher.pyw
 ```
 
 ---
 
-## License
+## 🖥️ Platform Notes
 
-MIT License
+### Windows
+- Java 21 from [Eclipse Adoptium](https://adoptium.net/temurin/releases/?version=21) — default path is pre-filled
+- Server processes killed via `taskkill /F /IM java.exe`
+- Folders opened via `os.startfile`
+- playit downloads `playit-windows.exe`
+
+### Linux
+- Install Java 21: `sudo apt install openjdk-21-jdk` (Ubuntu/Debian) or equivalent
+- `java` must be on PATH — the default Java path is just `"java"`
+- Server processes killed via `pkill -f 'server.jar'`
+- Folders opened via `xdg-open`
+- playit downloads `playit-linux-amd64` and `chmod +x`s it automatically
+- Window icon uses `.png` fallback (`.ico` not supported on Linux)
+- The `.pyw` extension is Windows-specific; on Linux just run `python3 launcher.pyw`
+
+### macOS
+- Install Java 21 from [Adoptium](https://adoptium.net) or via Homebrew: `brew install --cask temurin@21`
+- Folders opened via `open`
+- playit downloads `playit-darwin`
 
 ---
 
-## Credits
+## 🖥️ Usage
 
-Built by entity["people","Md. Mahir Zawad Khan","Minecraft launcher developer"] using:
+### Buttons
 
-- Python
-- CustomTkinter
-- Minecraft Java Edition
-- playit.gg
+| Button | What it does |
+|---|---|
+| **▶ Start Server** | Pulls latest files from GitHub, then launches the server with Aikar JVM flags |
+| **■ Stop Server** | Sends `/stop` to the server, kills the Java process, and pushes world data to GitHub |
+| **↑ Sync & Upload** | Manually runs `git add .` → commit → push |
+
+### Console
+
+Type any server command into the bottom input field (without `/`) and press **Enter** or **Send**.
+
+```
+say Hello everyone!
+op PlayerName
+time set day
+difficulty hard
+```
+
+### Quick Commands
+
+Pre-built buttons for common commands: Save World, Set Day/Night, Clear Weather, Check TPS, Hard/Peaceful mode, and more.
+
+---
+
+## 🧩 Addons
+
+Addons are `.py` files placed in the `addons/` folder next to `launcher.pyw`. They are loaded at startup.
+
+### Minimal addon
+
+```python
+def setup(ctx):
+    ctx["log"]("Hello from my addon!")
+```
+
+### Addon with metadata and settings
+
+```python
+__meta__ = {
+    "title":       "My Addon",
+    "version":     "1.0",
+    "author":      "You",
+    "description": "What this addon does.",
+    "preview_colors": ["#ff0000", "#00ff00"],
+    "settings": [
+        ("My setting", "my_addon_key",    "default", "entry"),
+        ("Toggle",     "my_addon_enabled", True,     "switch"),
+    ]
+}
+
+def setup(ctx):
+    ctx["log"]("My addon loaded!")
+```
+
+Addons with `__meta__` get a full detail panel in the **🧩 Addons** tab — description, colour swatches, settings form, and a source preview.
+
+### Context object
+
+| Key | Type | Description |
+|---|---|---|
+| `ctx["app"]` | CTk window | Root application window |
+| `ctx["T"]` | dict | Current theme colour dict |
+| `ctx["log"](msg)` | function | Write a line to the activity log |
+| `ctx["show_toast"](msg, color)` | function | Show a toast notification |
+| `ctx["send_server_cmd"](cmd)` | function | Send a command to the running server |
+| `ctx["load_settings"]()` | function | Returns the current settings dict |
+
+To install an addon: drop the `.py` file into the `addons/` folder, or use **🧩 Addons → + Install** in the app.
+
+---
+
+## ⚙️ Settings
+
+All settings are saved automatically to `settings.json`.
+
+| Setting | Description |
+|---|---|
+| **Theme** | Choose from 30+ visual presets |
+| **Fullscreen** | Toggle fullscreen mode |
+| **Log panel on left** | Swap the layout |
+| **Show performance panel** | Show/hide the live stats grid |
+| **Show chat & events panel** | Show/hide the player chat feed |
+| **Server path** | Path to the folder containing `server.jar` |
+| **GitHub repo URL** | Remote URL for Git sync |
+| **Java path** | Full path to `java` (or just `java` if on PATH) |
+| **Enable auto upload** | Push to GitHub on a timer |
+| **Upload interval** | How often auto upload runs (minutes) |
+| **Upload world on stop** | Push world folders to GitHub when server stops |
+
+---
+
+## 📁 File Structure
+
+```
+mc-launcher/
+├── launcher.pyw              # Main application
+├── icon.ico                  # Window icon (Windows)
+├── icon.png                  # Window icon (Linux/macOS)
+├── settings.json             # Saved preferences (auto-generated)
+├── install_requirements.bat  # Windows dependency installer
+├── addons/                   # Drop addon .py files here
+│   └── README.md             # Addon API reference (auto-generated)
+└── README.md                 # This file
+```
+
+---
+
+## 🔧 Troubleshooting
+
+**Window opens but immediately closes (Windows)**
+→ Run with `python launcher.pyw` in a terminal to see the error output.
+
+**`ModuleNotFoundError: No module named 'customtkinter'`**
+→ Run `pip install customtkinter psutil` (or `install_requirements.bat` on Windows).
+
+**Git pull/push fails**
+→ Make sure Git is installed and on PATH. Verify `REPO_URL` in Settings and that you have push access.
+
+**Server doesn't start / Java not found**
+→ Check that the Java path in Settings points to a valid `java` binary. On Linux run `which java` to find it.
+
+**Performance stats all show `—`**
+→ Stats populate once the server finishes starting. Wait for `Done (Xs)!` in the activity log.
+
+**playit.gg address never appears**
+→ Check the Agent Log in the playit.gg tab for a claim URL or error. Stop and restart the agent if needed.
+
+**Linux: permission denied on playit binary**
+→ The app runs `chmod +x` automatically on download. If you placed it manually: `chmod +x ./playit`
+
+---
+
+## 📦 Dependencies
+
+| Package | Purpose |
+|---|---|
+| `customtkinter` | Modern themed UI widgets |
+| `psutil` | System and process performance metrics |
+| `tkinterdnd2` | Drag-and-drop support (optional) |
+
+---
+
+*Designed for personal Minecraft server hosting · Windows, Linux, macOS*
