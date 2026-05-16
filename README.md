@@ -160,7 +160,6 @@ Both dark and light versions are available for most themes.
 
 ## Planned Features
 
-- Automatic backups
 - Mod/plugin manager
 - World manager
 - Remote dashboard

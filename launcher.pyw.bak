@@ -15,12 +15,6 @@ import importlib.util
 import sys
 from datetime import datetime
 try:
-    import remote_dashboard as _remote_mod
-    _REMOTE_AVAILABLE = True
-except ImportError:
-    _remote_mod = None
-    _REMOTE_AVAILABLE = False
-try:
     import tkinterdnd2 as dnd
     _DND_AVAILABLE = True
 except ImportError:
@@ -939,35 +933,6 @@ def make_scroll_frame(parent, **kwargs):
     inner.bind("<Map>", lambda e: _bind_tree(inner))
     return inner
 
-
-# ── Remote Dashboard tab ──────────────────────────────────────────────────
-def _build_remote_tab(parent):
-    if not _REMOTE_AVAILABLE or _remote_mod is None:
-        f = ctk.CTkFrame(parent, fg_color="transparent")
-        f.pack(fill="both", expand=True)
-        ctk.CTkLabel(f, text="remote_dashboard.py not found",
-                     font=ctk.CTkFont(size=14), text_color=T["stop"]).pack(expand=True)
-        ctk.CTkLabel(
-            f,
-            text="Place remote_dashboard.py in the same folder as launcher.pyw",
-            font=ctk.CTkFont(size=12), text_color=T["muted"]
-        ).pack()
-        return
-    _remote_mod.build_remote_tab(parent, {
-        "ctk":             ctk,
-        "T":               T,
-        "app":             app,
-        "log":             log,
-        "show_toast":      show_toast,
-        "perf":            perf,
-        "online_players":  online_players,
-        "server_proc":     lambda: server_proc,
-        "send_server_cmd": send_server_cmd,
-        "start_server":    start_server,
-        "stop_server":     stop_server,
-        "sync_git":        sync_git,
-    })
-
 # ── UI ────────────────────────────────────────────────────
 def build_ui():
     global status_dot, status_lbl, e_path, e_repo, e_java
@@ -1273,14 +1238,12 @@ def build_ui():
     serverinfo_frame = ctk.CTkFrame(tab_content, fg_color="transparent")
     playit_frame     = ctk.CTkFrame(tab_content, fg_color="transparent")
     multictrl_frame  = ctk.CTkFrame(tab_content, fg_color="transparent")
-    remote_frame     = ctk.CTkFrame(tab_content, fg_color="transparent")
 
     all_frames = {
         "dashboard":  dashboard_frame,
         "network":    network_frame,
         "serverinfo": serverinfo_frame,
         "playit":     playit_frame,
-        "remote":     remote_frame,
         "multictrl":  multictrl_frame,
     }
     _built_tabs = set()
@@ -1298,7 +1261,6 @@ def build_ui():
                 "network":    lambda: build_network_tab(network_frame),
                 "serverinfo": lambda: build_server_info_tab(serverinfo_frame),
                 "playit":     lambda: build_playit_tab(playit_frame),
-                "remote":     lambda: _build_remote_tab(remote_frame),
                 "multictrl":  lambda: build_multictrl_tab(multictrl_frame),
             }
             if name in builders:
@@ -1311,7 +1273,6 @@ def build_ui():
         ("playit",     "playit.gg"),
         ("serverinfo", "Server Info"),
         ("network",    "Network & IPs"),
-        ("remote",     "📱 Remote"),
         ("multictrl",  "⊞ MULTI CTRL"),
     ]
     for key, label in TAB_DEFS:
@@ -1440,8 +1401,6 @@ def build_dashboard(parent, is_fs):
                              wrap="word", state="disabled",
                              fg_color="transparent", text_color=T["text"])
     log_box.pack(fill="both", expand=True, padx=8, pady=(4,8))
-    if _REMOTE_AVAILABLE and _remote_mod:
-        _remote_mod._state["log_box_ref"] = log_box
     if log_history.strip():
         log_box.configure(state="normal"); log_box.insert("1.0", log_history)
         log_box.configure(state="disabled"); log_box.see("end")
@@ -3376,10 +3335,6 @@ def start_server():
         threading.Thread(target=perf_loop, daemon=True).start()
     set_status("Running", T["start"])
     log(f"Server is running! (PID {server_proc.pid})")
-    if _REMOTE_AVAILABLE and _remote_mod:
-        _remote_mod._state["server_running"] = True
-        _remote_mod._state["perf"] = perf
-        _remote_mod._state["online_players"] = online_players
     try: btn_stop.configure(state="normal")
     except: pass
 
@@ -3440,8 +3395,6 @@ def stop_server():
         log("  Upload on stop disabled - skipping push.")
     set_status("Stopped", T["stop"]); log("Done.")
     set_all_buttons("normal")
-    if _REMOTE_AVAILABLE and _remote_mod:
-        _remote_mod._state["server_running"] = False
 
 
 def sync_git():
