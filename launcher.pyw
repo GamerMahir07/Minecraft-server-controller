@@ -101,46 +101,208 @@ _playit_claim_re = re.compile(
 
 # ── App addon globals ──────────────────────────────────────
 _loaded_addons   = {}   # name -> module
+_remote_server_proc = [None]
 
 SRV_PATH  = _DEFAULT_SRV
 JAVA_PATH = _DEFAULT_JAVA
 REPO_URL  = "https://github.com/GamerMahir07/minecraft-server.git"
 
 THEMES = {
+    # ── Default ───────────────────────────────────────────
     "Dark (Default)":            {"appearance":"dark", "bg":"#0d0d0d","card":"#1a1a1a","border":"#2a2a2a","text":"#e0e0e0","muted":"#555555","start":"#22c55e","stop":"#ef4444","sync":"#60a5fa","handoff":"#f59e0b"},
     "Light (Default)":           {"appearance":"light","bg":"#f5f5f5","card":"#ffffff","border":"#e0e0e0","text":"#1a1a1a","muted":"#888888","start":"#16a34a","stop":"#dc2626","sync":"#2563eb","handoff":"#d97706"},
+    # ── Midnight Blue ─────────────────────────────────────
     "Midnight Blue Dark":        {"appearance":"dark", "bg":"#0a0f1e","card":"#111827","border":"#1e3a5f","text":"#e2e8f0","muted":"#4a6080","start":"#34d399","stop":"#f87171","sync":"#818cf8","handoff":"#fbbf24"},
     "Midnight Blue Light":       {"appearance":"light","bg":"#e8eeff","card":"#ffffff","border":"#7a9fd4","text":"#0a0f2e","muted":"#5570a0","start":"#059669","stop":"#dc2626","sync":"#4f46e5","handoff":"#d97706"},
+    # ── Creeper Green ─────────────────────────────────────
     "Creeper Green Dark":        {"appearance":"dark", "bg":"#0a1a0a","card":"#0f2a0f","border":"#1a4a1a","text":"#c8f0c8","muted":"#3a6a3a","start":"#4ade80","stop":"#f87171","sync":"#86efac","handoff":"#fde047"},
     "Creeper Green Light":       {"appearance":"light","bg":"#f0fff0","card":"#ffffff","border":"#86efac","text":"#052e16","muted":"#3a7a3a","start":"#16a34a","stop":"#dc2626","sync":"#059669","handoff":"#ca8a04"},
+    # ── Nether Red ────────────────────────────────────────
     "Nether Red Dark":           {"appearance":"dark", "bg":"#000000","card":"#1a0000","border":"#6a0000","text":"#ff4444","muted":"#8b0000","start":"#ff6b6b","stop":"#ff0000","sync":"#ff8c8c","handoff":"#ffd700"},
     "Nether Red Light":          {"appearance":"light","bg":"#fff5f5","card":"#ffffff","border":"#fca5a5","text":"#3a0000","muted":"#b06060","start":"#b91c1c","stop":"#7f1d1d","sync":"#dc2626","handoff":"#c2410c"},
+    # ── Ocean ─────────────────────────────────────────────
     "Ocean Dark":                {"appearance":"dark", "bg":"#01131e","card":"#021f30","border":"#0e4a6e","text":"#bae6fd","muted":"#2a6a8a","start":"#22d3ee","stop":"#f87171","sync":"#38bdf8","handoff":"#fbbf24"},
     "Ocean Light":               {"appearance":"light","bg":"#e0f7ff","card":"#ffffff","border":"#7dd3f0","text":"#003a52","muted":"#4a8fa8","start":"#0284c7","stop":"#e11d48","sync":"#0ea5e9","handoff":"#f59e0b"},
-    "Obsidian Dark":             {"appearance":"dark", "bg":"#080808","card":"#101010","border":"#1e1e2e","text":"#cdd6f4","muted":"#45475a","start":"#a6e3a1","stop":"#f38ba8","sync":"#89b4fa","handoff":"#fab387"},
+    # ── Sunset ────────────────────────────────────────────
+    "Sunset Dark":               {"appearance":"dark", "bg":"#1a0a00","card":"#2a1200","border":"#7c3a10","text":"#ffe4c4","muted":"#8a5030","start":"#4ade80","stop":"#f87171","sync":"#c084fc","handoff":"#fb923c"},
+    "Sunset Light":              {"appearance":"light","bg":"#fff7ed","card":"#ffffff","border":"#fed7aa","text":"#1c0a00","muted":"#9a6030","start":"#16a34a","stop":"#e11d48","sync":"#7c3aed","handoff":"#ea580c"},
+    # ── Obsidian ──────────────────────────────────────────
+    "Obsidian Dark":             {"appearance":"dark", "bg":"#020202","card":"#070710","border":"#13132a","text":"#cdd6f4","muted":"#3a3a52","start":"#a6e3a1","stop":"#f38ba8","sync":"#89b4fa","handoff":"#fab387"},
     "Obsidian Light":            {"appearance":"light","bg":"#f0f0f8","card":"#ffffff","border":"#c5c5e0","text":"#1e1e2e","muted":"#6e7090","start":"#40a02b","stop":"#d20f39","sync":"#1e66f5","handoff":"#e49320"},
+    # ── Ender Night ───────────────────────────────────────
     "Ender Night Dark":          {"appearance":"dark", "bg":"#000000","card":"#0d0010","border":"#3b0060","text":"#e8b4ff","muted":"#6a2a8a","start":"#bf7fff","stop":"#ff5f87","sync":"#d68fff","handoff":"#ffb347"},
     "Ender Night Light":         {"appearance":"light","bg":"#f8f0ff","card":"#ffffff","border":"#d4b0ff","text":"#200040","muted":"#7a40a0","start":"#7c3aed","stop":"#db2777","sync":"#6d28d9","handoff":"#c2410c"},
+    # ── Arctic ────────────────────────────────────────────
+    "Arctic Light":              {"appearance":"light","bg":"#eef4fb","card":"#ffffff","border":"#b8d4f0","text":"#0d2137","muted":"#6a90b0","start":"#0ea5e9","stop":"#e11d48","sync":"#6366f1","handoff":"#f59e0b"},
+    "Arctic Dark":               {"appearance":"dark", "bg":"#071520","card":"#0d2035","border":"#1a4060","text":"#dbeafe","muted":"#3a6080","start":"#38bdf8","stop":"#f87171","sync":"#818cf8","handoff":"#fbbf24"},
+    # ── Forest ────────────────────────────────────────────
+    "Forest Dark":               {"appearance":"dark", "bg":"#0d1a0d","card":"#142414","border":"#254025","text":"#d4edda","muted":"#4a7a4a","start":"#86efac","stop":"#fca5a5","sync":"#6ee7b7","handoff":"#fde68a"},
+    "Forest Light":              {"appearance":"light","bg":"#f0faf0","card":"#ffffff","border":"#a7d7a7","text":"#0a2010","muted":"#4a7a4a","start":"#16a34a","stop":"#dc2626","sync":"#0d9488","handoff":"#ca8a04"},
+    # ── Rose Gold ─────────────────────────────────────────
+    "Rose Gold Dark":            {"appearance":"dark", "bg":"#1a0008","card":"#2a0010","border":"#7a2040","text":"#ffd6e0","muted":"#8a4060","start":"#fb7185","stop":"#f43f5e","sync":"#f472b6","handoff":"#fb923c"},
+    "Rose Gold Light":           {"appearance":"light","bg":"#fff0f3","card":"#ffffff","border":"#f4c2cb","text":"#3a0a14","muted":"#b06070","start":"#e11d48","stop":"#9f1239","sync":"#db2777","handoff":"#c2410c"},
+    # ── Dracula ───────────────────────────────────────────
     "Dracula Dark":              {"appearance":"dark", "bg":"#282a36","card":"#313442","border":"#44475a","text":"#f8f8f2","muted":"#6272a4","start":"#50fa7b","stop":"#ff5555","sync":"#8be9fd","handoff":"#ffb86c"},
+    "Dracula Light":             {"appearance":"light","bg":"#f8f8f5","card":"#ffffff","border":"#bdbdcc","text":"#282a36","muted":"#6272a4","start":"#2da44e","stop":"#d0333e","sync":"#0087cc","handoff":"#c47900"},
+    # ── Lava ──────────────────────────────────────────────
+    "Lava Dark":                 {"appearance":"dark", "bg":"#120500","card":"#1e0a00","border":"#5a1a00","text":"#ffe8d0","muted":"#7a3a10","start":"#ff7c00","stop":"#ff3300","sync":"#ffaa00","handoff":"#ffdd00"},
+    "Lava Light":                {"appearance":"light","bg":"#fff8f0","card":"#ffffff","border":"#ffc080","text":"#2a0a00","muted":"#a05020","start":"#c2410c","stop":"#b91c1c","sync":"#ea580c","handoff":"#b45309"},
+    # ── Sand ──────────────────────────────────────────────
+    "Sand Light":                {"appearance":"light","bg":"#f5e6c8","card":"#fdf3e0","border":"#c8a96e","text":"#3d2b00","muted":"#8a6a30","start":"#5a8a00","stop":"#c0392b","sync":"#1a6b8a","handoff":"#c07000"},
+    "Sand Dark":                 {"appearance":"dark", "bg":"#1a1200","card":"#2a1e00","border":"#7a5a20","text":"#f0dcb0","muted":"#7a6030","start":"#a0c040","stop":"#e05030","sync":"#40a0c0","handoff":"#e0a000"},
+    # ── Void ──────────────────────────────────────────────
+    "Void Dark":                 {"appearance":"dark", "bg":"#000000","card":"#0a0a0a","border":"#1a1a1a","text":"#aaaaaa","muted":"#333333","start":"#444444","stop":"#666666","sync":"#555555","handoff":"#777777"},
+    "Void Light":                {"appearance":"light","bg":"#f0f0f0","card":"#ffffff","border":"#cccccc","text":"#222222","muted":"#999999","start":"#444444","stop":"#888888","sync":"#666666","handoff":"#777777"},
+    # ── Carbon ────────────────────────────────────────────
+    "Carbon Dark":               {"appearance":"dark", "bg":"#1a1a2e","card":"#16213e","border":"#0f3460","text":"#e0e0e0","muted":"#4a4a6a","start":"#00c896","stop":"#e94560","sync":"#4d9fff","handoff":"#f5a623"},
+    "Carbon Light":              {"appearance":"light","bg":"#eef0ff","card":"#ffffff","border":"#8090cc","text":"#0a0a20","muted":"#5060a0","start":"#009966","stop":"#cc2244","sync":"#2266cc","handoff":"#c07000"},
+    # ── Lavender ──────────────────────────────────────────
+    "Lavender Light":            {"appearance":"light","bg":"#f0eeff","card":"#ffffff","border":"#c5b8ff","text":"#1a0050","muted":"#7060a0","start":"#5b21b6","stop":"#db2777","sync":"#4f46e5","handoff":"#d97706"},
+    "Lavender Dark":             {"appearance":"dark", "bg":"#0f0820","card":"#1a1035","border":"#3d2a7a","text":"#e8dfff","muted":"#6050a0","start":"#a78bfa","stop":"#f472b6","sync":"#818cf8","handoff":"#fbbf24"},
+    # ── Mocha ─────────────────────────────────────────────
+    "Mocha Dark":                {"appearance":"dark", "bg":"#1c1410","card":"#2a1f18","border":"#4a3428","text":"#f0dece","muted":"#7a5a48","start":"#c8a86e","stop":"#e05050","sync":"#90b8d0","handoff":"#e8c060"},
+    "Mocha Light":               {"appearance":"light","bg":"#fdf6ee","card":"#ffffff","border":"#d4b896","text":"#2a1a0a","muted":"#9a7a60","start":"#7a5a28","stop":"#c0392b","sync":"#2a6080","handoff":"#c07020"},
+    # ── Sakura ────────────────────────────────────────────
+    "Sakura Light":              {"appearance":"light","bg":"#fff0f5","card":"#ffffff","border":"#ffb8cc","text":"#3a0020","muted":"#c06080","start":"#be185d","stop":"#e11d48","sync":"#9d174d","handoff":"#f59e0b"},
+    "Sakura Dark":               {"appearance":"dark", "bg":"#1a0010","card":"#2a0018","border":"#7a2050","text":"#ffd6e8","muted":"#8a4068","start":"#f472b6","stop":"#fb7185","sync":"#e879f9","handoff":"#fbbf24"},
+    # ── Matrix ────────────────────────────────────────────
+    "Matrix Dark":               {"appearance":"dark", "bg":"#000000","card":"#001400","border":"#004400","text":"#00ff41","muted":"#006600","start":"#00ff41","stop":"#ff0000","sync":"#00cc33","handoff":"#ffff00"},
+    "Matrix Light":              {"appearance":"light","bg":"#f0fff0","card":"#ffffff","border":"#80cc80","text":"#002200","muted":"#408040","start":"#166534","stop":"#b91c1c","sync":"#14532d","handoff":"#713f12"},
+    # ── Nord ──────────────────────────────────────────────
     "Nord Dark":                 {"appearance":"dark", "bg":"#2e3440","card":"#3b4252","border":"#434c5e","text":"#eceff4","muted":"#4c566a","start":"#a3be8c","stop":"#bf616a","sync":"#88c0d0","handoff":"#ebcb8b"},
     "Nord Light":                {"appearance":"light","bg":"#eceff4","card":"#ffffff","border":"#d8dee9","text":"#2e3440","muted":"#7a8898","start":"#4c9a2a","stop":"#bf616a","sync":"#5e81ac","handoff":"#d08770"},
+    # ── Solarized ─────────────────────────────────────────
+    "Solarized Light":           {"appearance":"light","bg":"#fdf6e3","card":"#eee8d5","border":"#93a1a1","text":"#073642","muted":"#657b83","start":"#859900","stop":"#dc322f","sync":"#268bd2","handoff":"#b58900"},
+    "Solarized Dark":            {"appearance":"dark", "bg":"#002b36","card":"#073642","border":"#586e75","text":"#fdf6e3","muted":"#839496","start":"#859900","stop":"#dc322f","sync":"#268bd2","handoff":"#b58900"},
+    # ── Gruvbox ───────────────────────────────────────────
     "Gruvbox Dark":              {"appearance":"dark", "bg":"#282828","card":"#3c3836","border":"#504945","text":"#ebdbb2","muted":"#7c6f64","start":"#b8bb26","stop":"#fb4934","sync":"#83a598","handoff":"#fabd2f"},
     "Gruvbox Light":             {"appearance":"light","bg":"#fbf1c7","card":"#f9f5d7","border":"#d5c4a1","text":"#3c3836","muted":"#928374","start":"#79740e","stop":"#9d0006","sync":"#076678","handoff":"#b57614"},
-    "Solarized Dark":            {"appearance":"dark", "bg":"#002b36","card":"#073642","border":"#586e75","text":"#fdf6e3","muted":"#839496","start":"#859900","stop":"#dc322f","sync":"#268bd2","handoff":"#b58900"},
-    "Solarized Light":           {"appearance":"light","bg":"#fdf6e3","card":"#eee8d5","border":"#93a1a1","text":"#073642","muted":"#657b83","start":"#859900","stop":"#dc322f","sync":"#268bd2","handoff":"#b58900"},
+    # ── Cyberpunk ─────────────────────────────────────────
     "Cyberpunk Dark":            {"appearance":"dark", "bg":"#0a0014","card":"#110022","border":"#ff00ff","text":"#00ffff","muted":"#8800aa","start":"#00ffff","stop":"#ff0088","sync":"#ff00ff","handoff":"#ffff00"},
-    "Matrix Dark":               {"appearance":"dark", "bg":"#000000","card":"#001400","border":"#004400","text":"#00ff41","muted":"#006600","start":"#00ff41","stop":"#ff0000","sync":"#00cc33","handoff":"#ffff00"},
+    "Cyberpunk Light":           {"appearance":"light","bg":"#f0e8ff","card":"#ffffff","border":"#cc44ff","text":"#1a0030","muted":"#8840aa","start":"#0088cc","stop":"#cc0066","sync":"#8800ff","handoff":"#cc8800"},
+    # ── Slate ─────────────────────────────────────────────
     "Slate Dark":                {"appearance":"dark", "bg":"#0f172a","card":"#1e293b","border":"#334155","text":"#f1f5f9","muted":"#64748b","start":"#22d3ee","stop":"#f43f5e","sync":"#818cf8","handoff":"#fb923c"},
     "Slate Light":               {"appearance":"light","bg":"#f1f5f9","card":"#ffffff","border":"#cbd5e1","text":"#0f172a","muted":"#64748b","start":"#0891b2","stop":"#e11d48","sync":"#4f46e5","handoff":"#ea580c"},
+    # ── Amber ─────────────────────────────────────────────
     "Amber Dark":                {"appearance":"dark", "bg":"#1a1000","card":"#2a1a00","border":"#7a5500","text":"#ffe88a","muted":"#7a6020","start":"#fbbf24","stop":"#ef4444","sync":"#f59e0b","handoff":"#84cc16"},
-    "Rose Gold Dark":            {"appearance":"dark", "bg":"#1a0008","card":"#2a0010","border":"#7a2040","text":"#ffd6e0","muted":"#8a4060","start":"#fb7185","stop":"#f43f5e","sync":"#f472b6","handoff":"#fb923c"},
-    "Forest Dark":               {"appearance":"dark", "bg":"#0d1a0d","card":"#142414","border":"#254025","text":"#d4edda","muted":"#4a7a4a","start":"#86efac","stop":"#fca5a5","sync":"#6ee7b7","handoff":"#fde68a"},
-    "Carbon Dark":               {"appearance":"dark", "bg":"#1a1a2e","card":"#16213e","border":"#0f3460","text":"#e0e0e0","muted":"#4a4a6a","start":"#00c896","stop":"#e94560","sync":"#4d9fff","handoff":"#f5a623"},
-    "Lavender Dark":             {"appearance":"dark", "bg":"#0f0820","card":"#1a1035","border":"#3d2a7a","text":"#e8dfff","muted":"#6050a0","start":"#a78bfa","stop":"#f472b6","sync":"#818cf8","handoff":"#fbbf24"},
-    "Mocha Dark":                {"appearance":"dark", "bg":"#1c1410","card":"#2a1f18","border":"#4a3428","text":"#f0dece","muted":"#7a5a48","start":"#c8a86e","stop":"#e05050","sync":"#90b8d0","handoff":"#e8c060"},
-    "Void Dark":                 {"appearance":"dark", "bg":"#000000","card":"#0a0a0a","border":"#1a1a1a","text":"#aaaaaa","muted":"#333333","start":"#444444","stop":"#666666","sync":"#555555","handoff":"#777777"},
+    "Amber Light":               {"appearance":"light","bg":"#fffbeb","card":"#ffffff","border":"#fde68a","text":"#1c1400","muted":"#9a7a00","start":"#b45309","stop":"#dc2626","sync":"#d97706","handoff":"#65a30d"},
+    # ── Copper ────────────────────────────────────────────
+    "Copper Dark":               {"appearance":"dark", "bg":"#150900","card":"#221200","border":"#7a3a10","text":"#ffcc99","muted":"#7a4a20","start":"#f97316","stop":"#ef4444","sync":"#fb923c","handoff":"#fbbf24"},
+    "Copper Light":              {"appearance":"light","bg":"#fff8f0","card":"#ffffff","border":"#e0a060","text":"#1a0800","muted":"#a06030","start":"#c2410c","stop":"#b91c1c","sync":"#d97706","handoff":"#65a30d"},
+    # ── CB: Blue & Orange ─────────────────────────────────
+    "CB: Blue & Orange Light":   {"appearance":"light","bg":"#f7f7f7","card":"#ffffff","border":"#cccccc","text":"#000000","muted":"#767676","start":"#0072b2","stop":"#d55e00","sync":"#56b4e9","handoff":"#e69f00"},
     "CB: Blue & Orange Dark":    {"appearance":"dark", "bg":"#111111","card":"#1e1e1e","border":"#333333","text":"#ffffff","muted":"#888888","start":"#56b4e9","stop":"#d55e00","sync":"#0072b2","handoff":"#e69f00"},
+    # ── CB: Green & Purple ────────────────────────────────
+    "CB: Green & Purple Light":  {"appearance":"light","bg":"#f5f5f5","card":"#ffffff","border":"#cccccc","text":"#000000","muted":"#767676","start":"#009e73","stop":"#cc79a7","sync":"#0072b2","handoff":"#f0e442"},
+    "CB: Green & Purple Dark":   {"appearance":"dark", "bg":"#111111","card":"#1e1e1e","border":"#333333","text":"#eeeeee","muted":"#888888","start":"#009e73","stop":"#cc79a7","sync":"#56b4e9","handoff":"#f0e442"},
+    # ── CB: High Contrast ─────────────────────────────────
+    "CB: High Contrast Light":   {"appearance":"light","bg":"#ffffff","card":"#f0f0f0","border":"#000000","text":"#000000","muted":"#444444","start":"#0000ff","stop":"#ff0000","sync":"#007700","handoff":"#ff8800"},
     "CB: High Contrast Dark":    {"appearance":"dark", "bg":"#000000","card":"#1a1a1a","border":"#ffffff","text":"#ffffff","muted":"#aaaaaa","start":"#ffff00","stop":"#ff6600","sync":"#00ffff","handoff":"#ff99ff"},
+    # ── CB: Tol Muted ─────────────────────────────────────
+    "CB: Tol Muted Light":       {"appearance":"light","bg":"#f8f4f0","card":"#ffffff","border":"#bbaabb","text":"#221122","muted":"#887799","start":"#44aa99","stop":"#cc6677","sync":"#88ccee","handoff":"#ddcc77"},
+    "CB: Tol Muted Dark":        {"appearance":"dark", "bg":"#221122","card":"#332244","border":"#554466","text":"#eeddff","muted":"#887799","start":"#44aa99","stop":"#cc6677","sync":"#88ccee","handoff":"#ddcc77"},
+    # ── CB: Monochrome ────────────────────────────────────
+    "CB: Monochrome Light":      {"appearance":"light","bg":"#ffffff","card":"#f0f0f0","border":"#999999","text":"#000000","muted":"#666666","start":"#222222","stop":"#777777","sync":"#444444","handoff":"#555555"},
+    "CB: Monochrome Dark":       {"appearance":"dark", "bg":"#111111","card":"#1e1e1e","border":"#555555","text":"#eeeeee","muted":"#888888","start":"#cccccc","stop":"#888888","sync":"#aaaaaa","handoff":"#bbbbbb"},
+    # ── Pastel ────────────────────────────────────────────
+    "Pastel Light":              {"appearance":"light","bg":"#fdf4ff","card":"#ffffff","border":"#e9d5ff","text":"#3b0764","muted":"#a78bca","start":"#7c3aed","stop":"#e11d48","sync":"#2563eb","handoff":"#d97706"},
+    "Pastel Dark":               {"appearance":"dark", "bg":"#1a0a2e","card":"#2d1b4e","border":"#5b3a8a","text":"#e9d5ff","muted":"#9d7ac0","start":"#a78bfa","stop":"#fb7185","sync":"#60a5fa","handoff":"#fbbf24"},
+    # ── Teal ──────────────────────────────────────────────
+    "Teal Light":                {"appearance":"light","bg":"#eefffe","card":"#ffffff","border":"#80d8d0","text":"#002420","muted":"#4a9a90","start":"#007a70","stop":"#cc2244","sync":"#0066aa","handoff":"#cc8800"},
+    "Teal Dark":                 {"appearance":"dark", "bg":"#00100e","card":"#001a18","border":"#00524a","text":"#a0fff5","muted":"#2a7a72","start":"#00d4c0","stop":"#ff4466","sync":"#00aaff","handoff":"#ffcc00"},
+    # ── Peach ─────────────────────────────────────────────
+    "Peach Light":               {"appearance":"light","bg":"#fff8f5","card":"#ffffff","border":"#fed7aa","text":"#431407","muted":"#c47c5a","start":"#c2410c","stop":"#be123c","sync":"#9333ea","handoff":"#ca8a04"},
+    "Peach Dark":                {"appearance":"dark", "bg":"#180a00","card":"#2c1200","border":"#7c2d12","text":"#ffedd5","muted":"#c47c5a","start":"#fb923c","stop":"#f43f5e","sync":"#c084fc","handoff":"#fbbf24"},
+    # ── Sky ───────────────────────────────────────────────
+    "Sky Light":                 {"appearance":"light","bg":"#f0f9ff","card":"#ffffff","border":"#bae6fd","text":"#0c4a6e","muted":"#7dd3fc","start":"#0284c7","stop":"#e11d48","sync":"#7c3aed","handoff":"#d97706"},
+    "Sky Dark":                  {"appearance":"dark", "bg":"#020d18","card":"#082032","border":"#0c4a6e","text":"#e0f2fe","muted":"#38bdf8","start":"#38bdf8","stop":"#f87171","sync":"#a78bfa","handoff":"#fbbf24"},
+    # ── Lilac ─────────────────────────────────────────────
+    "Lilac Light":               {"appearance":"light","bg":"#faf5ff","card":"#ffffff","border":"#e9d5ff","text":"#3b0764","muted":"#c4b5fd","start":"#7c3aed","stop":"#db2777","sync":"#0284c7","handoff":"#d97706"},
+    "Lilac Dark":                {"appearance":"dark", "bg":"#120820","card":"#1e1035","border":"#4c1d95","text":"#ede9fe","muted":"#a78bfa","start":"#c4b5fd","stop":"#f472b6","sync":"#60a5fa","handoff":"#fbbf24"},
+    # ── Honey ─────────────────────────────────────────────
+    "Honey Light":               {"appearance":"light","bg":"#fffbeb","card":"#ffffff","border":"#fde68a","text":"#1c1400","muted":"#d9a22e","start":"#d97706","stop":"#dc2626","sync":"#0284c7","handoff":"#65a30d"},
+    "Honey Dark":                {"appearance":"dark", "bg":"#160e00","card":"#241800","border":"#92400e","text":"#fef3c7","muted":"#d97706","start":"#fbbf24","stop":"#f87171","sync":"#38bdf8","handoff":"#86efac"},
+    # ── Ruby ──────────────────────────────────────────────
+    "Ruby Light":                {"appearance":"light","bg":"#fff1f2","card":"#ffffff","border":"#fecdd3","text":"#4c0519","muted":"#fb7185","start":"#be123c","stop":"#dc2626","sync":"#0284c7","handoff":"#d97706"},
+    "Ruby Dark":                 {"appearance":"dark", "bg":"#1a0008","card":"#2d000f","border":"#881337","text":"#ffe4e6","muted":"#fb7185","start":"#fb7185","stop":"#ef4444","sync":"#38bdf8","handoff":"#fbbf24"},
+    # ── Jade ──────────────────────────────────────────────
+    "Jade Light":                {"appearance":"light","bg":"#f0fdf4","card":"#ffffff","border":"#bbf7d0","text":"#052e16","muted":"#6ee7b7","start":"#059669","stop":"#dc2626","sync":"#0284c7","handoff":"#d97706"},
+    "Jade Dark":                 {"appearance":"dark", "bg":"#011810","card":"#022c1e","border":"#065f46","text":"#d1fae5","muted":"#34d399","start":"#34d399","stop":"#f87171","sync":"#38bdf8","handoff":"#fbbf24"},
+    # ── Dusk ──────────────────────────────────────────────
+    "Dusk Dark":                 {"appearance":"dark", "bg":"#0a0014","card":"#130022","border":"#38006b","text":"#e8d5ff","muted":"#9d74cc","start":"#c084fc","stop":"#f472b6","sync":"#818cf8","handoff":"#fb923c"},
+    "Dusk Light":                {"appearance":"light","bg":"#f9f0ff","card":"#ffffff","border":"#d8b4fe","text":"#1e0050","muted":"#9d74cc","start":"#7c3aed","stop":"#be185d","sync":"#4f46e5","handoff":"#d97706"},
+    # ── Espresso ──────────────────────────────────────────
+    "Espresso Dark":             {"appearance":"dark", "bg":"#100800","card":"#1a1000","border":"#3d2000","text":"#f5e6c8","muted":"#7a5a30","start":"#d4a96e","stop":"#e05050","sync":"#7eb8d0","handoff":"#e8c060"},
+    "Espresso Light":            {"appearance":"light","bg":"#fdf8f0","card":"#fff9f2","border":"#d4b896","text":"#1c0e00","muted":"#8a6a40","start":"#92400e","stop":"#b91c1c","sync":"#0369a1","handoff":"#b45309"},
+    # ── Steel ─────────────────────────────────────────────
+    "Steel Light":               {"appearance":"light","bg":"#f8fafc","card":"#ffffff","border":"#cbd5e1","text":"#0f172a","muted":"#94a3b8","start":"#0284c7","stop":"#e11d48","sync":"#7c3aed","handoff":"#d97706"},
+    "Steel Dark":                {"appearance":"dark", "bg":"#0d1117","card":"#161b22","border":"#30363d","text":"#e6edf3","muted":"#8b949e","start":"#3fb950","stop":"#f85149","sync":"#58a6ff","handoff":"#d29922"},
+    # ── Cherry Blossom ────────────────────────────────────
+    "Cherry Blossom Light":      {"appearance":"light","bg":"#fff8fa","card":"#ffffff","border":"#fecdd3","text":"#3d0015","muted":"#f9a8d4","start":"#e11d48","stop":"#be123c","sync":"#db2777","handoff":"#f59e0b"},
+    "Cherry Blossom Dark":       {"appearance":"dark", "bg":"#1a0010","card":"#2d0018","border":"#9f1239","text":"#ffe4e6","muted":"#fda4af","start":"#fb7185","stop":"#f43f5e","sync":"#e879f9","handoff":"#fbbf24"},
+    # ── Glacier ───────────────────────────────────────────
+    "Glacier Light":             {"appearance":"light","bg":"#f0fdff","card":"#ffffff","border":"#a5f3fc","text":"#083344","muted":"#67e8f9","start":"#0891b2","stop":"#e11d48","sync":"#6366f1","handoff":"#f59e0b"},
+    "Glacier Dark":              {"appearance":"dark", "bg":"#001a22","card":"#002e3a","border":"#164e63","text":"#cffafe","muted":"#22d3ee","start":"#22d3ee","stop":"#f87171","sync":"#818cf8","handoff":"#fbbf24"},
+    # ── Tangerine ─────────────────────────────────────────
+    "Tangerine Light":           {"appearance":"light","bg":"#fff7ed","card":"#ffffff","border":"#fed7aa","text":"#1c0a00","muted":"#fb923c","start":"#ea580c","stop":"#dc2626","sync":"#0284c7","handoff":"#65a30d"},
+    "Tangerine Dark":            {"appearance":"dark", "bg":"#1a0800","card":"#2c1200","border":"#c2410c","text":"#ffedd5","muted":"#fb923c","start":"#fb923c","stop":"#ef4444","sync":"#38bdf8","handoff":"#86efac"},
+    # ── Parchment ─────────────────────────────────────────
+    "Parchment Light":           {"appearance":"light","bg":"#fdf8ee","card":"#fef9f0","border":"#d6c89a","text":"#2a1e00","muted":"#a08840","start":"#7a5a00","stop":"#b91c1c","sync":"#0369a1","handoff":"#b45309"},
+    "Parchment Dark":            {"appearance":"dark", "bg":"#15100a","card":"#201a10","border":"#5a4820","text":"#f0e4c0","muted":"#8a7040","start":"#d4aa60","stop":"#e05050","sync":"#70a8c0","handoff":"#d4aa30"},
+    # ── Volcanic ──────────────────────────────────────────
+    "Volcanic Dark":             {"appearance":"dark", "bg":"#0a0000","card":"#160000","border":"#7f1d1d","text":"#fecaca","muted":"#991b1b","start":"#ef4444","stop":"#f97316","sync":"#fbbf24","handoff":"#a3e635"},
+    "Volcanic Light":            {"appearance":"light","bg":"#fff5f5","card":"#ffffff","border":"#fca5a5","text":"#1a0000","muted":"#ef4444","start":"#dc2626","stop":"#c2410c","sync":"#d97706","handoff":"#65a30d"},
+    # ── Deep Sea ──────────────────────────────────────────
+    "Deep Sea Dark":             {"appearance":"dark", "bg":"#000d1a","card":"#001a33","border":"#003366","text":"#b3d9ff","muted":"#336699","start":"#0066cc","stop":"#cc0033","sync":"#00aacc","handoff":"#ffaa00"},
+    "Deep Sea Light":            {"appearance":"light","bg":"#e8f4ff","card":"#ffffff","border":"#99c9f5","text":"#001433","muted":"#6699cc","start":"#0066cc","stop":"#cc0033","sync":"#0099bb","handoff":"#cc8800"},
+    # ── Bubblegum ─────────────────────────────────────────
+    "Bubblegum Light":           {"appearance":"light","bg":"#fff0fa","card":"#ffffff","border":"#f9a8d4","text":"#2d0025","muted":"#f472b6","start":"#ec4899","stop":"#e11d48","sync":"#8b5cf6","handoff":"#f59e0b"},
+    "Bubblegum Dark":            {"appearance":"dark", "bg":"#1a0016","card":"#2d0026","border":"#9d174d","text":"#fce7f3","muted":"#f472b6","start":"#f472b6","stop":"#fb7185","sync":"#c084fc","handoff":"#fbbf24"},
+    # ── Ender Green ───────────────────────────────────────
+    "programmer Green Dark":          {"appearance":"dark", "bg":"#000000","card":"#000d00","border":"#003b00","text":"#b4ffb4","muted":"#2a6a2a","start":"#7fff7f","stop":"#ff5f87","sync":"#7dff8f","handoff":"#ffb347"},
+    "programmer Green Light":         {"appearance":"light","bg":"#f0fff0","card":"#ffffff","border":"#b0d4b0","text":"#002000","muted":"#408040","start":"#276327","stop":"#db2777","sync":"#2d7a2d","handoff":"#c2410c"},
+    # ── Midnight Purple ───────────────────────────────────
+    "Midnight Purple Dark":      {"appearance":"dark", "bg":"#05000f","card":"#0d0020","border":"#4c1d95","text":"#ede9fe","muted":"#7c3aed","start":"#a78bfa","stop":"#f472b6","sync":"#818cf8","handoff":"#fbbf24"},
+    "Midnight Purple Light":     {"appearance":"light","bg":"#faf5ff","card":"#ffffff","border":"#c4b5fd","text":"#1e0050","muted":"#7c3aed","start":"#6d28d9","stop":"#be185d","sync":"#4f46e5","handoff":"#d97706"},
+    # ── Cinnamon ──────────────────────────────────────────
+    "Cinnamon Light":            {"appearance":"light","bg":"#fdf5ee","card":"#ffffff","border":"#d4a57a","text":"#2a1200","muted":"#a0622a","start":"#9a3412","stop":"#b91c1c","sync":"#0369a1","handoff":"#b45309"},
+    "Cinnamon Dark":             {"appearance":"dark", "bg":"#180900","card":"#281400","border":"#92400e","text":"#fde8d0","muted":"#c47c4a","start":"#f97316","stop":"#ef4444","sync":"#38bdf8","handoff":"#fbbf24"},
+    # ── Petal ─────────────────────────────────────────────
+    "Petal Light":               {"appearance":"light","bg":"#fef9ff","card":"#ffffff","border":"#f0abfc","text":"#3b0764","muted":"#e879f9","start":"#a21caf","stop":"#e11d48","sync":"#7c3aed","handoff":"#d97706"},
+    "Petal Dark":                {"appearance":"dark", "bg":"#1a0020","card":"#2a0035","border":"#701a75","text":"#fae8ff","muted":"#e879f9","start":"#d946ef","stop":"#f43f5e","sync":"#818cf8","handoff":"#fbbf24"},
+    # ── Golden Hour ───────────────────────────────────────
+    "Golden Hour Light":         {"appearance":"light","bg":"#fffbf0","card":"#ffffff","border":"#fde68a","text":"#1c1200","muted":"#d9a520","start":"#b45309","stop":"#dc2626","sync":"#7c3aed","handoff":"#65a30d"},
+    "Golden Hour Dark":          {"appearance":"dark", "bg":"#130e00","card":"#201600","border":"#854d0e","text":"#fefce8","muted":"#d97706","start":"#eab308","stop":"#f87171","sync":"#c084fc","handoff":"#86efac"},
+    # ── Neon Nights ───────────────────────────────────────
+    "Neon Nights Dark":          {"appearance":"dark", "bg":"#050010","card":"#0d0020","border":"#330066","text":"#e8d0ff","muted":"#6600cc","start":"#cc00ff","stop":"#ff0066","sync":"#00ffcc","handoff":"#ffcc00"},
+    "Neon Nights Light":         {"appearance":"light","bg":"#f5f0ff","card":"#ffffff","border":"#cc99ff","text":"#1a0040","muted":"#8844cc","start":"#7c00cc","stop":"#cc0055","sync":"#008866","handoff":"#997700"},
+    # ── Tundra ────────────────────────────────────────────
+    "Tundra Light":              {"appearance":"light","bg":"#f5f8fa","card":"#ffffff","border":"#b0c4cc","text":"#1a2530","muted":"#7a9aaa","start":"#1d6a8a","stop":"#c0392b","sync":"#2c7a4b","handoff":"#c07a00"},
+    "Tundra Dark":               {"appearance":"dark", "bg":"#0a1218","card":"#111e26","border":"#1e3a4a","text":"#d4e8f0","muted":"#4a7a8a","start":"#4ab8d8","stop":"#e05060","sync":"#4ac880","handoff":"#e8c050"},
+    # ── Autumn ────────────────────────────────────────────
+    "Autumn Light":              {"appearance":"light","bg":"#fdf7f0","card":"#ffffff","border":"#d4a87a","text":"#2a1400","muted":"#a07040","start":"#c05010","stop":"#c0392b","sync":"#2c6080","handoff":"#c08020"},
+    "Autumn Dark":               {"appearance":"dark", "bg":"#180a00","card":"#281400","border":"#8b4513","text":"#ffecd0","muted":"#b06030","start":"#e07030","stop":"#e05050","sync":"#50a0c0","handoff":"#e0b020"},
+    # ── Abyss ─────────────────────────────────────────────
+    "Abyss Dark":                {"appearance":"dark", "bg":"#000408","card":"#00080f","border":"#001a33","text":"#80c8ff","muted":"#004488","start":"#0080ff","stop":"#ff2244","sync":"#00ccaa","handoff":"#ffaa00"},
+    "Abyss Light":               {"appearance":"light","bg":"#f0f8ff","card":"#ffffff","border":"#80b8e8","text":"#000810","muted":"#4488bb","start":"#0066cc","stop":"#cc2233","sync":"#008877","handoff":"#bb8800"},
+    # ── Hazel ─────────────────────────────────────────────
+    "Hazel Light":               {"appearance":"light","bg":"#faf8f5","card":"#ffffff","border":"#c8b89a","text":"#2a2015","muted":"#8a7a60","start":"#5a4020","stop":"#b91c1c","sync":"#1d4ed8","handoff":"#b45309"},
+    "Hazel Dark":                {"appearance":"dark", "bg":"#141008","card":"#1e1810","border":"#5a4830","text":"#ecdcc8","muted":"#8a7050","start":"#d0a870","stop":"#e05050","sync":"#60a0d0","handoff":"#d8b040"},
+    # ── Deep Space ────────────────────────────────────────
+    "Deep Space Dark":           {"appearance":"dark", "bg":"#00000a","card":"#00000f","border":"#0a0a2a","text":"#c8c8ff","muted":"#4444aa","start":"#6688ff","stop":"#ff4466","sync":"#44ddff","handoff":"#ffcc44"},
+    "Deep Space Light":          {"appearance":"light","bg":"#f0f0ff","card":"#ffffff","border":"#9090cc","text":"#00001a","muted":"#5555aa","start":"#3344cc","stop":"#cc2244","sync":"#0088cc","handoff":"#aa7700"},
+    # ── Moss ──────────────────────────────────────────────
+    "Moss Light":                {"appearance":"light","bg":"#f4f9f0","card":"#ffffff","border":"#a0c090","text":"#0f2010","muted":"#607850","start":"#3a6030","stop":"#c0392b","sync":"#1d6080","handoff":"#b08020"},
+    "Moss Dark":                 {"appearance":"dark", "bg":"#0a1208","card":"#101e0e","border":"#204020","text":"#d0e8c0","muted":"#608050","start":"#70c050","stop":"#e05050","sync":"#50a0c0","handoff":"#d0b840"},
+    # ── Tokyonight ────────────────────────────────────────
+    "Tokyonight Dark":           {"appearance":"dark", "bg":"#1a1b2e","card":"#16213e","border":"#0f3460","text":"#a9b1d6","muted":"#414868","start":"#73daca","stop":"#f7768e","sync":"#7aa2f7","handoff":"#ff9e64"},
+    "Tokyonight Light":          {"appearance":"light","bg":"#d5d6db","card":"#ffffff","border":"#a8aecb","text":"#343b58","muted":"#9699a6","start":"#33635c","stop":"#8c4351","sync":"#34548a","handoff":"#8f5e15"},
+    # ── Frostbite ─────────────────────────────────────────
+    "Frostbite Dark":            {"appearance":"dark", "bg":"#050f1a","card":"#0a1e2e","border":"#1a4060","text":"#e0f8ff","muted":"#3080aa","start":"#00c8ff","stop":"#ff4488","sync":"#88ddff","handoff":"#ffdd44"},
+    "Frostbite Light":           {"appearance":"light","bg":"#e8f8ff","card":"#ffffff","border":"#88ccee","text":"#001830","muted":"#4499bb","start":"#0088cc","stop":"#cc2266","sync":"#5588ff","handoff":"#cc9900"},
+    # ── Ultra ─────────────────────────────────────────────
+    "Ultra White Light":         {"appearance":"light","bg":"#ffffff","card":"#ffffff","border":"#eeeeee","text":"#000000","muted":"#bbbbbb","start":"#000000","stop":"#ff0000","sync":"#444444","handoff":"#ff8800"},
+    "Ultra Black Dark":          {"appearance":"dark", "bg":"#000000","card":"#050505","border":"#0f0f0f","text":"#ffffff","muted":"#333333","start":"#ffffff","stop":"#ff0000","sync":"#aaaaaa","handoff":"#ffff00"},
 }
 
 SETTINGS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "settings.json")
@@ -973,6 +1135,10 @@ def build_ui():
     playit_frame     = ctk.CTkFrame(tab_content, fg_color="transparent")
     addons_frame     = ctk.CTkFrame(tab_content, fg_color="transparent")
     multictrl_frame  = ctk.CTkFrame(tab_content, fg_color="transparent")
+    addons_frame  = ctk.CTkFrame(tab_content, fg_color="transparent")
+    backups_frame = ctk.CTkFrame(tab_content, fg_color="transparent")
+    remote_frame  = ctk.CTkFrame(tab_content, fg_color="transparent")
+    docker_frame  = ctk.CTkFrame(tab_content, fg_color="transparent")
 
     all_frames = {
         "dashboard":  dashboard_frame,
@@ -980,6 +1146,9 @@ def build_ui():
         "serverinfo": serverinfo_frame,
         "playit":     playit_frame,
         "addons":     addons_frame,
+        "backups":    backups_frame,
+        "remote":     remote_frame,
+        "docker":     docker_frame,
         "multictrl":  multictrl_frame,
     }
     _built_tabs = set()
@@ -998,6 +1167,9 @@ def build_ui():
                 "serverinfo": lambda: build_server_info_tab(serverinfo_frame),
                 "playit":     lambda: build_playit_tab(playit_frame),
                 "addons":     lambda: build_addons_tab(addons_frame),
+                "backups":    lambda: build_backups_tab(backups_frame),
+                "remote":     lambda: build_remote_dashboard_tab(remote_frame),
+                "docker":     lambda: build_docker_tab(docker_frame),
                 "multictrl":  lambda: build_multictrl_tab(multictrl_frame),
             }
             if name in builders:
@@ -1010,8 +1182,11 @@ def build_ui():
         ("playit",     "playit.gg"),
         ("serverinfo", "Server Info"),
         ("network",    "Network & IPs"),
-        ("addons",     "🧩 Addons"),
-        ("multictrl",  "⊞ Multi CTRL"),
+        ("addons",     "Addons"),
+        ("backups",    "Backups"),
+        ("remote",     "Remote"),
+        ("docker",     "Docker"),
+        ("multictrl",  "⊞ MULTI CTRL"),
     ]
     for key, label in TAB_DEFS:
         is_special = key in ("multictrl", "addons")
@@ -1765,7 +1940,6 @@ def build_playit_tab(parent):
     ctk.CTkButton(br,text="Copy Address",width=100,height=26,font=ctk.CTkFont(size=11),
                   fg_color=T["sync"],hover_color=T["sync"],text_color="#000",
                   command=_copy_addr).pack(side="left")
-
     lb, lh = _card("Agent Log")
     pt_log = ctk.CTkTextbox(lb, font=ctk.CTkFont(size=11,family="Consolas"),
                              wrap="word", state="disabled", height=200,
@@ -2278,6 +2452,883 @@ def setup(ctx):
     except Exception:
         pass
 
+# ── 2. BACKUPS TAB ────────────────────────────────────────────────────────────
+
+def build_backups_tab(parent):
+    import zipfile, glob
+
+    scroll = make_scroll_frame(parent, fg_color="transparent")
+
+    def _card(title, subtitle=None):
+        f = ctk.CTkFrame(scroll, fg_color=T["card"], border_color=T["border"],
+                         border_width=1, corner_radius=10)
+        f.pack(fill="x", padx=20, pady=(10, 0))
+        h = ctk.CTkFrame(f, fg_color="transparent"); h.pack(fill="x", padx=14, pady=(10, 4))
+        ctk.CTkLabel(h, text=title, font=ctk.CTkFont(size=12, weight="bold"),
+                     text_color=T["text"]).pack(side="left")
+        if subtitle:
+            ctk.CTkLabel(h, text=subtitle, font=ctk.CTkFont(size=10),
+                         text_color=T["muted"]).pack(side="left", padx=8)
+        ctk.CTkFrame(f, height=1, fg_color=T["border"]).pack(fill="x", padx=14)
+        body = ctk.CTkFrame(f, fg_color="transparent"); body.pack(fill="x", padx=14, pady=(8, 12))
+        return body, h
+
+    # ── Settings ──────────────────────────────────────────
+    sb, sh = _card("Backup Settings")
+    s = load_settings()
+
+    backup_dir_var    = ctk.StringVar(value=s.get("backup_dir", ""))
+    backup_keep_var   = ctk.StringVar(value=str(s.get("backup_keep", 10)))
+    backup_auto_var   = ctk.BooleanVar(value=s.get("backup_auto", False))
+    backup_mins_var   = ctk.StringVar(value=str(s.get("backup_interval_mins", 30)))
+    _backup_timer     = [None]
+
+    def _save_bs(*_):
+        update_setting("backup_dir",           backup_dir_var.get())
+        update_setting("backup_keep",          int(backup_keep_var.get() or 10))
+        update_setting("backup_interval_mins", int(backup_mins_var.get() or 30))
+
+    def _browse_backup_dir():
+        import tkinter.filedialog as fd
+        p = fd.askdirectory(title="Select Backup Destination Folder")
+        if p: backup_dir_var.set(p); _save_bs()
+
+    r0 = ctk.CTkFrame(sb, fg_color="transparent"); r0.pack(fill="x", pady=3)
+    ctk.CTkLabel(r0, text="Backup destination", font=ctk.CTkFont(size=12),
+                 text_color=T["text"], width=180, anchor="w").pack(side="left")
+    ctk.CTkEntry(r0, textvariable=backup_dir_var, height=28,
+                 font=ctk.CTkFont(size=11, family="Consolas"),
+                 fg_color=T["bg"], border_color=T["border"], text_color=T["text"],
+                 placeholder_text="Leave blank to use <server>/backups/"
+                 ).pack(side="left", fill="x", expand=True, padx=(0, 6))
+    ctk.CTkButton(r0, text="Browse", width=66, height=28, font=ctk.CTkFont(size=11),
+                  fg_color="transparent", border_width=1, border_color=T["border"],
+                  text_color=T["muted"], hover_color=T["border"],
+                  command=_browse_backup_dir).pack(side="left")
+
+    r1 = ctk.CTkFrame(sb, fg_color="transparent"); r1.pack(fill="x", pady=3)
+    ctk.CTkLabel(r1, text="Keep last N backups", font=ctk.CTkFont(size=12),
+                 text_color=T["text"], width=180, anchor="w").pack(side="left")
+    ke = ctk.CTkEntry(r1, textvariable=backup_keep_var, width=60, height=28,
+                      font=ctk.CTkFont(size=12, family="Consolas"),
+                      fg_color=T["bg"], border_color=T["border"], text_color=T["text"])
+    ke.pack(side="left", padx=(0, 8))
+    ke.bind("<FocusOut>", _save_bs); ke.bind("<Return>", _save_bs)
+
+    r2 = ctk.CTkFrame(sb, fg_color="transparent"); r2.pack(fill="x", pady=3)
+    ctk.CTkLabel(r2, text="Auto backup while running", font=ctk.CTkFont(size=12),
+                 text_color=T["text"], width=180, anchor="w").pack(side="left")
+
+    def _toggle_auto_backup(v):
+        update_setting("backup_auto", v)
+        if v: _schedule_backup()
+        else:
+            if _backup_timer[0]:
+                try: _backup_timer[0].cancel()
+                except: pass
+
+    ctk.CTkSwitch(r2, text="", variable=backup_auto_var,
+                  command=lambda: _toggle_auto_backup(backup_auto_var.get()),
+                  button_color=T["sync"], progress_color=T["sync"]).pack(side="left")
+
+    r3 = ctk.CTkFrame(sb, fg_color="transparent"); r3.pack(fill="x", pady=3)
+    ctk.CTkLabel(r3, text="Auto interval (minutes)", font=ctk.CTkFont(size=12),
+                 text_color=T["text"], width=180, anchor="w").pack(side="left")
+    me = ctk.CTkEntry(r3, textvariable=backup_mins_var, width=60, height=28,
+                      font=ctk.CTkFont(size=12, family="Consolas"),
+                      fg_color=T["bg"], border_color=T["border"], text_color=T["text"])
+    me.pack(side="left")
+    me.bind("<FocusOut>", _save_bs); me.bind("<Return>", _save_bs)
+
+    # ── Manual backup ──────────────────────────────────────
+    mb, mh = _card("Create Backup")
+    backup_status = ctk.CTkLabel(mb, text="", font=ctk.CTkFont(size=11), text_color=T["muted"])
+    backup_prog   = ctk.CTkProgressBar(mb, height=6); backup_prog.set(0)
+
+    worlds_to_back = ctk.StringVar(value="world,world_nether,world_the_end")
+    r4 = ctk.CTkFrame(mb, fg_color="transparent"); r4.pack(fill="x", pady=3)
+    ctk.CTkLabel(r4, text="Folders to backup (comma-separated)",
+                 font=ctk.CTkFont(size=12), text_color=T["text"],
+                 width=280, anchor="w").pack(side="left")
+    ctk.CTkEntry(r4, textvariable=worlds_to_back, height=28,
+                 font=ctk.CTkFont(size=11, family="Consolas"),
+                 fg_color=T["bg"], border_color=T["border"],
+                 text_color=T["text"]).pack(side="left", fill="x", expand=True)
+
+    def _get_backup_dest():
+        custom = backup_dir_var.get().strip()
+        if custom and os.path.isdir(custom): return custom
+        path = load_settings().get("srv_path", SRV_PATH)
+        dest = os.path.join(path, "backups")
+        os.makedirs(dest, exist_ok=True)
+        return dest
+
+    def _prune_old(dest, keep):
+        zips = sorted(
+            [os.path.join(dest, f) for f in os.listdir(dest) if f.endswith(".zip")],
+            key=os.path.getmtime)
+        while len(zips) > keep:
+            try: os.remove(zips.pop(0))
+            except: pass
+
+    def _do_backup(auto=False):
+        import zipfile
+        s2 = load_settings()
+        path = s2.get("srv_path", SRV_PATH)
+        dest = _get_backup_dest()
+        folders = [f.strip() for f in worlds_to_back.get().split(",") if f.strip()]
+        keep    = int(backup_keep_var.get() or 10)
+
+        ts   = datetime.now().strftime("%Y%m%d_%H%M%S")
+        tag  = "auto" if auto else "manual"
+        zname = os.path.join(dest, f"backup_{tag}_{ts}.zip")
+
+        def _work():
+            try:
+                app.after(0, lambda: backup_status.configure(
+                    text="Creating backup...", text_color=T["sync"]))
+                app.after(0, lambda: (backup_prog.set(0),
+                                       backup_prog.pack(fill="x", pady=(6, 0))))
+                total_files = sum(
+                    sum(1 for _ in os.walk(os.path.join(path, f)))
+                    for f in folders if os.path.isdir(os.path.join(path, f)))
+                done = [0]
+                with zipfile.ZipFile(zname, "w", zipfile.ZIP_DEFLATED) as zf:
+                    for folder in folders:
+                        src = os.path.join(path, folder)
+                        if not os.path.isdir(src): continue
+                        for root, dirs, files in os.walk(src):
+                            for file in files:
+                                fp = os.path.join(root, file)
+                                arcname = os.path.relpath(fp, path)
+                                zf.write(fp, arcname)
+                                done[0] += 1
+                                if total_files:
+                                    p = done[0] / total_files
+                                    app.after(0, backup_prog.set, min(p, 1.0))
+                size_mb = os.path.getsize(zname) / 1048576
+                _prune_old(dest, keep)
+                app.after(0, lambda: backup_status.configure(
+                    text=f"Backup complete! {size_mb:.1f} MB — {zname}",
+                    text_color=T["start"]))
+                app.after(0, backup_prog.set, 1.0)
+                app.after(0, show_toast, f"Backup done ({size_mb:.1f} MB)", T["start"])
+                app.after(0, _refresh_backup_list)
+                log(f"  Backup created: {os.path.basename(zname)} ({size_mb:.1f} MB)")
+            except Exception as ex:
+                app.after(0, lambda: backup_status.configure(
+                    text=f"Backup failed: {ex}", text_color=T["stop"]))
+                log(f"  Backup error: {ex}")
+
+        threading.Thread(target=_work, daemon=True).start()
+
+    def _schedule_backup():
+        if _backup_timer[0]:
+            try: _backup_timer[0].cancel()
+            except: pass
+        if not backup_auto_var.get(): return
+        mins = int(backup_mins_var.get() or 30)
+        def _fire():
+            _do_backup(auto=True)
+            _schedule_backup()
+        _backup_timer[0] = threading.Timer(mins * 60, _fire)
+        _backup_timer[0].daemon = True
+        _backup_timer[0].start()
+
+    backup_status.pack(anchor="w", pady=(6, 0))
+
+    ctk.CTkButton(mb, text="Create Backup Now", height=34, corner_radius=8,
+                  font=ctk.CTkFont(size=12, weight="bold"),
+                  fg_color=T["start"], hover_color=T["start"], text_color="#000",
+                  command=lambda: threading.Thread(
+                      target=_do_backup, daemon=True).start()
+                  ).pack(anchor="w", pady=(8, 0))
+
+    # ── Backup list ────────────────────────────────────────
+    lb, lh = _card("Saved Backups")
+    backup_list_frame = ctk.CTkScrollableFrame(lb, fg_color=T["bg"],
+                                               border_color=T["border"],
+                                               border_width=1, corner_radius=8,
+                                               height=220)
+    backup_list_frame.pack(fill="x")
+
+    def _refresh_backup_list():
+        for w in backup_list_frame.winfo_children(): w.destroy()
+        dest = _get_backup_dest()
+        try:
+            zips = sorted(
+                [f for f in os.listdir(dest) if f.endswith(".zip")],
+                key=lambda f: os.path.getmtime(os.path.join(dest, f)),
+                reverse=True)
+        except: zips = []
+
+        if not zips:
+            ctk.CTkLabel(backup_list_frame, text="No backups found.",
+                         font=ctk.CTkFont(size=12), text_color=T["muted"]).pack(padx=14, pady=10)
+            return
+
+        for z in zips:
+            full = os.path.join(dest, z)
+            size_mb = os.path.getsize(full) / 1048576
+            mtime   = datetime.fromtimestamp(os.path.getmtime(full)).strftime("%Y-%m-%d %H:%M")
+            tag_color = T["sync"] if "manual" in z else T["muted"]
+
+            row = ctk.CTkFrame(backup_list_frame, fg_color="transparent")
+            row.pack(fill="x", padx=8, pady=3)
+
+            ctk.CTkLabel(row, text=z, font=ctk.CTkFont(size=11, family="Consolas"),
+                         text_color=T["text"]).pack(side="left")
+            ctk.CTkLabel(row, text=f"{size_mb:.1f} MB",
+                         font=ctk.CTkFont(size=10), text_color=T["muted"]).pack(side="left", padx=8)
+            ctk.CTkLabel(row, text=mtime,
+                         font=ctk.CTkFont(size=10), text_color=T["muted"]).pack(side="left")
+
+            def _open_folder(p=dest): os.startfile(p)
+            def _delete_backup(p=full, n=z):
+                try:
+                    os.remove(p)
+                    show_toast(f"Deleted {n}", T["stop"])
+                    _refresh_backup_list()
+                except Exception as ex:
+                    show_toast(f"Error: {ex}", T["stop"])
+
+            ctk.CTkButton(row, text="Delete", width=58, height=22,
+                          font=ctk.CTkFont(size=10), fg_color="transparent",
+                          border_width=1, border_color=T["stop"],
+                          text_color=T["stop"], hover_color=T["border"],
+                          command=_delete_backup).pack(side="right")
+            ctk.CTkButton(row, text="Open", width=52, height=22,
+                          font=ctk.CTkFont(size=10), fg_color="transparent",
+                          border_width=1, border_color=T["border"],
+                          text_color=T["muted"], hover_color=T["border"],
+                          command=_open_folder).pack(side="right", padx=(0, 4))
+
+    _refresh_backup_list()
+    ctk.CTkButton(lh, text="Refresh", width=70, height=22,
+                  font=ctk.CTkFont(size=10), fg_color="transparent",
+                  border_width=1, border_color=T["border"],
+                  text_color=T["muted"], hover_color=T["border"],
+                  command=_refresh_backup_list).pack(side="right")
+
+    ctk.CTkFrame(scroll, height=12, fg_color="transparent").pack()
+
+    if backup_auto_var.get(): _schedule_backup()
+
+
+# ── 3. REMOTE DASHBOARD TAB ───────────────────────────────────────────────────
+
+_remote_server_proc = [None]   # Flask subprocess
+
+def build_remote_dashboard_tab(parent):
+    scroll = make_scroll_frame(parent, fg_color="transparent")
+
+    def _card(title, subtitle=None):
+        f = ctk.CTkFrame(scroll, fg_color=T["card"], border_color=T["border"],
+                         border_width=1, corner_radius=10)
+        f.pack(fill="x", padx=20, pady=(10, 0))
+        h = ctk.CTkFrame(f, fg_color="transparent"); h.pack(fill="x", padx=14, pady=(10, 4))
+        ctk.CTkLabel(h, text=title, font=ctk.CTkFont(size=12, weight="bold"),
+                     text_color=T["text"]).pack(side="left")
+        if subtitle:
+            ctk.CTkLabel(h, text=subtitle, font=ctk.CTkFont(size=10),
+                         text_color=T["muted"]).pack(side="left", padx=8)
+        ctk.CTkFrame(f, height=1, fg_color=T["border"]).pack(fill="x", padx=14)
+        body = ctk.CTkFrame(f, fg_color="transparent"); body.pack(fill="x", padx=14, pady=(8, 12))
+        return body, h
+
+    ab, _ = _card("What is this?")
+    ctk.CTkLabel(ab, text=(
+        "Starts a lightweight web server on your PC so you can control the Minecraft server\n"
+        "from your phone, tablet, or another computer on the same network.\n\n"
+        "Open  http://<your-local-ip>:<port>  in any browser — no app install needed.\n"
+        "Features: start/stop server, live log, send commands, player list, TPS/RAM stats."
+    ), font=ctk.CTkFont(size=12), text_color=T["muted"],
+       wraplength=840, justify="left").pack(anchor="w")
+
+    # ── Config ────────────────────────────────────────────
+    cb, _ = _card("Configuration")
+    s = load_settings()
+    rd_port_var = ctk.StringVar(value=str(s.get("remote_port", 5000)))
+    rd_pass_var = ctk.StringVar(value=s.get("remote_password", ""))
+
+    def _save_rd(*_):
+        update_setting("remote_port",     rd_port_var.get())
+        update_setting("remote_password", rd_pass_var.get())
+
+    r0 = ctk.CTkFrame(cb, fg_color="transparent"); r0.pack(fill="x", pady=3)
+    ctk.CTkLabel(r0, text="Dashboard port", font=ctk.CTkFont(size=12),
+                 text_color=T["text"], width=180, anchor="w").pack(side="left")
+    pe = ctk.CTkEntry(r0, textvariable=rd_port_var, width=80, height=28,
+                      font=ctk.CTkFont(size=12, family="Consolas"),
+                      fg_color=T["bg"], border_color=T["border"], text_color=T["text"])
+    pe.pack(side="left")
+    pe.bind("<FocusOut>", _save_rd); pe.bind("<Return>", _save_rd)
+
+    r1 = ctk.CTkFrame(cb, fg_color="transparent"); r1.pack(fill="x", pady=3)
+    ctk.CTkLabel(r1, text="Password (optional)", font=ctk.CTkFont(size=12),
+                 text_color=T["text"], width=180, anchor="w").pack(side="left")
+    passentry = ctk.CTkEntry(r1, textvariable=rd_pass_var, width=200, height=28, show="•",
+                              font=ctk.CTkFont(size=12, family="Consolas"),
+                              fg_color=T["bg"], border_color=T["border"], text_color=T["text"],
+                              placeholder_text="leave blank = no auth")
+    passentry.pack(side="left", padx=(0, 8))
+    def _toggle_pass_vis():
+        passentry.configure(show="" if passentry.cget("show") == "•" else "•")
+    ctk.CTkButton(r1, text="Show", width=52, height=28,
+                  font=ctk.CTkFont(size=10), fg_color="transparent",
+                  border_width=1, border_color=T["border"],
+                  text_color=T["muted"], hover_color=T["border"],
+                  command=_toggle_pass_vis).pack(side="left")
+    passentry.bind("<FocusOut>", _save_rd)
+
+    ctk.CTkLabel(cb,
+                 text="Keep the dashboard on your home network only — don't forward this port to the internet.",
+                 font=ctk.CTkFont(size=10), text_color=T["muted"]).pack(anchor="w", pady=(6, 0))
+
+    # ── Control ───────────────────────────────────────────
+    ctrl_b, ctrl_h = _card("Dashboard Control")
+    rd_status = ctk.CTkLabel(ctrl_b, text="● Stopped",
+                              font=ctk.CTkFont(size=13, weight="bold"),
+                              text_color=T["stop"])
+    rd_status.pack(side="left")
+    rd_url_lbl = ctk.CTkLabel(ctrl_b, text="",
+                               font=ctk.CTkFont(size=12, family="Consolas"),
+                               text_color=T["sync"])
+    rd_url_lbl.pack(side="left", padx=(14, 0))
+
+    _rd_current_url = [""]   # store URL here so copy always works
+
+    def _set_rd_status(txt, color):
+        try: rd_status.configure(text=txt, text_color=color)
+        except: pass
+    def _set_rd_url(url):
+        _rd_current_url[0] = url
+        try: rd_url_lbl.configure(text=url)
+        except: pass
+
+    def _write_flask_server():
+        """Write the Flask dashboard script to a temp file and return its path."""
+        script_path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                   "_mc_ctrl_remote.py")
+        flask_code = r'''
+import sys, json, threading, time, os, queue
+from datetime import datetime
+
+try:
+    from flask import Flask, request, jsonify, render_template_string, session, redirect
+except ImportError:
+    import subprocess, sys
+    subprocess.run([sys.executable, "-m", "pip", "install", "flask", "--quiet"])
+    from flask import Flask, request, jsonify, render_template_string, session, redirect
+
+PORT     = int(sys.argv[1]) if len(sys.argv) > 1 else 5000
+PASSWORD = sys.argv[2] if len(sys.argv) > 2 else ""
+STATE_FILE = sys.argv[3] if len(sys.argv) > 3 else ""
+
+app = Flask(__name__)
+app.secret_key = os.urandom(24)
+
+LOG_LINES = []
+LOG_LOCK  = threading.Lock()
+
+def read_state():
+    try:
+        if STATE_FILE and os.path.exists(STATE_FILE):
+            return json.loads(open(STATE_FILE).read())
+    except: pass
+    return {}
+
+HTML = """<!DOCTYPE html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MC CTRL Remote</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: #0d0d0d; color: #e0e0e0; font-family: system-ui, sans-serif; padding: 12px; }
+h1 { color: #22c55e; font-size: 20px; margin-bottom: 12px; }
+.card { background: #1a1a1a; border: 1px solid #2a2a2a; border-radius: 10px; padding: 12px; margin-bottom: 10px; }
+.row { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 6px; }
+button { padding: 8px 16px; border-radius: 6px; border: none; cursor: pointer; font-size: 13px; font-weight: bold; }
+.btn-start { background: #22c55e; color: #000; }
+.btn-stop  { background: #ef4444; color: #fff; }
+.btn-send  { background: #60a5fa; color: #000; }
+.btn-cmd   { background: transparent; border: 1px solid #2a2a2a; color: #888; font-size: 11px; padding: 5px 10px; }
+input[type=text], input[type=password] {
+  width: 100%; padding: 8px; background: #111; border: 1px solid #333;
+  border-radius: 6px; color: #e0e0e0; font-size: 13px; margin-bottom: 8px;
+}
+.stat { display: inline-block; background: #111; border-radius: 6px; padding: 6px 12px; margin: 3px; font-size: 12px; }
+.stat span { font-size: 18px; font-weight: bold; color: #22c55e; display: block; }
+#log { background: #050505; border-radius: 6px; padding: 8px; height: 220px; overflow-y: auto;
+       font-family: monospace; font-size: 11px; color: #aaa; white-space: pre-wrap; }
+.dot-on { color: #22c55e; } .dot-off { color: #ef4444; }
+</style>
+</head>
+<body>
+<h1>⛏ MC CTRL Remote</h1>
+<div class="card" id="status-card">
+  <div class="row">
+    <span id="status-dot" class="dot-off">●</span>
+    <strong id="status-text">Loading...</strong>
+  </div>
+  <div class="row">
+    <div class="stat">TPS<span id="s-tps">--</span></div>
+    <div class="stat">Players<span id="s-players">--</span></div>
+    <div class="stat">RAM<span id="s-ram">--</span></div>
+    <div class="stat">CPU<span id="s-cpu">--</span></div>
+    <div class="stat">Uptime<span id="s-uptime">--</span></div>
+  </div>
+  <div class="row">
+    <button class="btn-start" onclick="action('start')">▶ Start</button>
+    <button class="btn-stop"  onclick="action('stop')">■ Stop</button>
+  </div>
+</div>
+<div class="card">
+  <b style="font-size:12px;color:#555">COMMAND</b>
+  <input type="text" id="cmd" placeholder="say Hello / time set day / etc" />
+  <div class="row">
+    <button class="btn-send" onclick="sendCmd()">Send</button>
+    <button class="btn-cmd" onclick="sendCmdVal('list')">list</button>
+    <button class="btn-cmd" onclick="sendCmdVal('tps')">tps</button>
+    <button class="btn-cmd" onclick="sendCmdVal('save-all')">save-all</button>
+    <button class="btn-cmd" onclick="sendCmdVal('time set day')">day</button>
+    <button class="btn-cmd" onclick="sendCmdVal('weather clear')">clear weather</button>
+  </div>
+</div>
+<div class="card">
+  <b style="font-size:12px;color:#555">LIVE LOG</b>
+  <div id="log"></div>
+</div>
+<script>
+async function api(path, body) {
+  const r = await fetch(path, {
+    method: body ? "POST" : "GET",
+    headers: body ? {"Content-Type":"application/json"} : {},
+    body: body ? JSON.stringify(body) : undefined
+  });
+  return r.json();
+}
+async function action(a) {
+  await api("/api/action", {action: a});
+}
+async function sendCmd() {
+  const v = document.getElementById("cmd").value.trim();
+  if (!v) return;
+  await api("/api/cmd", {cmd: v});
+  document.getElementById("cmd").value = "";
+}
+function sendCmdVal(v) {
+  document.getElementById("cmd").value = v; sendCmd();
+}
+document.getElementById("cmd").addEventListener("keydown", e => { if(e.key==="Enter") sendCmd(); });
+async function poll() {
+  try {
+    const d = await api("/api/state");
+    const on = d.running;
+    document.getElementById("status-dot").className = on ? "dot-on" : "dot-off";
+    document.getElementById("status-text").textContent = on ? "Server Running" : "Server Stopped";
+    document.getElementById("s-tps").textContent = d.tps || "--";
+    document.getElementById("s-players").textContent = d.players || "0";
+    document.getElementById("s-ram").textContent = d.ram_srv || "--";
+    document.getElementById("s-cpu").textContent = d.cpu_srv || "--";
+    document.getElementById("s-uptime").textContent = d.uptime || "--";
+    const lg = document.getElementById("log");
+    if (d.log && d.log.length) {
+      d.log.forEach(l => { lg.textContent += l + "\n"; });
+      lg.scrollTop = lg.scrollHeight;
+    }
+  } catch(e) {}
+  setTimeout(poll, 2000);
+}
+poll();
+</script>
+</body>
+</html>"""
+
+@app.route("/")
+def index():
+    return render_template_string(HTML)
+
+@app.route("/api/state")
+def state():
+    s = read_state()
+    with LOG_LOCK:
+        lines = list(LOG_LINES)
+        LOG_LINES.clear()
+    s["log"] = lines
+    return jsonify(s)
+
+@app.route("/api/action", methods=["POST"])
+def do_action():
+    data = request.get_json(force=True)
+    act  = data.get("action","")
+    s    = read_state()
+    # Write action request to state file
+    try:
+        s["pending_action"] = act
+        open(STATE_FILE, "w").write(json.dumps(s))
+    except: pass
+    return jsonify({"ok": True})
+
+@app.route("/api/cmd", methods=["POST"])
+def do_cmd():
+    data = request.get_json(force=True)
+    cmd  = data.get("cmd","")
+    s    = read_state()
+    try:
+        s["pending_cmd"] = cmd
+        open(STATE_FILE, "w").write(json.dumps(s))
+    except: pass
+    return jsonify({"ok": True})
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=PORT, debug=False, use_reloader=False)
+'''
+        with open(script_path, "w", encoding="utf-8") as f:
+            f.write(flask_code)
+        return script_path
+
+    # State file for bridge between Flask and main app
+    _state_file = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                "_mc_ctrl_state.json")
+
+    def _write_state():
+        try:
+            state = {
+                "running":  server_proc is not None and server_proc.poll() is None,
+                "tps":      perf.get("tps","--"),
+                "players":  perf.get("players","0"),
+                "ram_srv":  perf.get("ram_srv","--"),
+                "cpu_srv":  perf.get("cpu_srv","--"),
+                "uptime":   perf.get("uptime","--"),
+            }
+            # Check for pending actions from web dashboard
+            try:
+                existing = json.loads(open(_state_file).read())
+                if existing.get("pending_action"):
+                    act = existing.pop("pending_action")
+                    if act == "start":
+                        threading.Thread(target=start_server, daemon=True).start()
+                    elif act == "stop":
+                        threading.Thread(target=stop_server, daemon=True).start()
+                if existing.get("pending_cmd"):
+                    send_server_cmd(existing.pop("pending_cmd"))
+            except: pass
+            open(_state_file, "w").write(json.dumps(state))
+        except: pass
+
+    def _state_sync_loop():
+        while _remote_server_proc[0] and _remote_server_proc[0].poll() is None:
+            app.after(0, _write_state)
+            time.sleep(2)
+
+    def _start_remote():
+        if _remote_server_proc[0] and _remote_server_proc[0].poll() is None:
+            show_toast("Dashboard already running.", T["muted"]); return
+        try:
+            import importlib.util as _iu
+            if _iu.find_spec("flask") is None:
+                _set_rd_status("● Installing Flask...", T["handoff"])
+                subprocess.run([sys.executable, "-m", "pip", "install", "flask", "--quiet"],
+                               creationflags=CREATE_NO_WINDOW)
+        except: pass
+
+        script = _write_flask_server()
+        port   = rd_port_var.get().strip() or "5000"
+        pw     = rd_pass_var.get().strip()
+        try:
+            proc = subprocess.Popen(
+                [sys.executable, script, port, pw, _state_file],
+                creationflags=CREATE_NO_WINDOW,
+                stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+            _remote_server_proc[0] = proc
+            import socket
+            local_ip = "127.0.0.1"
+            try:
+                s2 = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                s2.connect(("8.8.8.8", 80)); local_ip = s2.getsockname()[0]; s2.close()
+            except: pass
+            url = f"http://{local_ip}:{port}"
+            _set_rd_status("● Running", T["start"])
+            _set_rd_url(url)
+            show_toast(f"Dashboard running at {url}", T["start"], 5000)
+            log(f"-- Remote dashboard started: {url} --")
+            threading.Thread(target=_state_sync_loop, daemon=True).start()
+        except Exception as ex:
+            show_toast(f"Failed: {ex}", T["stop"])
+            _set_rd_status("● Error", T["stop"])
+
+    def _stop_remote():
+        if _remote_server_proc[0]:
+            try: _remote_server_proc[0].terminate()
+            except: pass
+            _remote_server_proc[0] = None
+        _set_rd_status("● Stopped", T["stop"])
+        _set_rd_url("")
+        log("-- Remote dashboard stopped --")
+
+    def _copy_url():
+        url = _rd_current_url[0]
+        if url: app.clipboard_clear(); app.clipboard_append(url); show_toast(f"Copied: {url}", T["sync"])
+
+    br = ctk.CTkFrame(ctrl_h, fg_color="transparent"); br.pack(side="right")
+    ctk.CTkButton(br, text="▶ Start", width=74, height=26, font=ctk.CTkFont(size=11),
+                  fg_color=T["start"], hover_color=T["start"], text_color="#000",
+                  command=_start_remote).pack(side="left", padx=(0, 4))
+    ctk.CTkButton(br, text="■ Stop", width=74, height=26, font=ctk.CTkFont(size=11),
+                  fg_color=T["stop"], hover_color=T["stop"], text_color="#fff",
+                  command=_stop_remote).pack(side="left", padx=(0, 4))
+    ctk.CTkButton(br, text="Copy URL", width=80, height=26, font=ctk.CTkFont(size=11),
+                  fg_color=T["sync"], hover_color=T["sync"], text_color="#000",
+                  command=_copy_url).pack(side="left")
+
+    # ── Guide ──────────────────────────────────────────────
+    gb, _ = _card("How to use from your phone")
+    ctk.CTkLabel(gb, text=(
+        "1. Start the Remote Dashboard above.\n"
+        "2. Make sure your phone is on the same WiFi network as this PC.\n"
+        "3. Open the URL shown above in your phone's browser.\n"
+        "4. You can now start/stop the server, send commands, and watch the live log.\n\n"
+        "To access from outside your home network, use a VPN (e.g. Tailscale) — "
+        "do not expose port 5000 to the internet directly."
+    ), font=ctk.CTkFont(size=12), text_color=T["muted"],
+       wraplength=840, justify="left").pack(anchor="w")
+
+    ctk.CTkFrame(scroll, height=12, fg_color="transparent").pack()
+
+
+# ── 4. DOCKER TAB ─────────────────────────────────────────────────────────────
+
+def build_docker_tab(parent):
+    scroll = make_scroll_frame(parent, fg_color="transparent")
+
+    def _card(title, subtitle=None):
+        f = ctk.CTkFrame(scroll, fg_color=T["card"], border_color=T["border"],
+                         border_width=1, corner_radius=10)
+        f.pack(fill="x", padx=20, pady=(10, 0))
+        h = ctk.CTkFrame(f, fg_color="transparent"); h.pack(fill="x", padx=14, pady=(10, 4))
+        ctk.CTkLabel(h, text=title, font=ctk.CTkFont(size=12, weight="bold"),
+                     text_color=T["text"]).pack(side="left")
+        if subtitle:
+            ctk.CTkLabel(h, text=subtitle, font=ctk.CTkFont(size=10),
+                         text_color=T["muted"]).pack(side="left", padx=8)
+        ctk.CTkFrame(f, height=1, fg_color=T["border"]).pack(fill="x", padx=14)
+        body = ctk.CTkFrame(f, fg_color="transparent"); body.pack(fill="x", padx=14, pady=(8, 12))
+        return body, h
+
+    def _docker_available():
+        try:
+            r = subprocess.run("docker version", shell=True, capture_output=True,
+                               text=True, creationflags=CREATE_NO_WINDOW, timeout=5)
+            return r.returncode == 0
+        except: return False
+
+    ab, _ = _card("Docker Support")
+    ctk.CTkLabel(ab, text=(
+        "Run your Minecraft server inside a Docker container — portable, clean, easy to back up.\n"
+        "No Java install needed on the host: it's bundled inside the container.\n\n"
+        "  docker compose up  →  server starts instantly in a container\n"
+        "  Persistent data    →  world files mount to your server folder\n"
+        "  Resource limits    →  set RAM and CPU caps from this panel"
+    ), font=ctk.CTkFont(size=12), text_color=T["muted"],
+       wraplength=840, justify="left").pack(anchor="w")
+
+    # Docker status check
+    docker_ok = _docker_available()
+    dock_st_color = T["start"] if docker_ok else T["stop"]
+    dock_st_text  = "● Docker available" if docker_ok else "● Docker not found"
+    ctk.CTkLabel(ab, text=dock_st_text, font=ctk.CTkFont(size=11, weight="bold"),
+                 text_color=dock_st_color).pack(anchor="w", pady=(8, 0))
+    if not docker_ok:
+        ctk.CTkLabel(ab, text="Install Docker Desktop from https://www.docker.com/products/docker-desktop/",
+                     font=ctk.CTkFont(size=10), text_color=T["muted"]).pack(anchor="w")
+
+    # ── Compose config ────────────────────────────────────
+    cc, ch = _card("Docker Compose Config")
+    s = load_settings()
+
+    dc_image_var  = ctk.StringVar(value=s.get("docker_image",  "itzg/minecraft-server"))
+    dc_port_var   = ctk.StringVar(value=s.get("docker_port",   "25565"))
+    dc_ram_var    = ctk.StringVar(value=s.get("docker_ram",    "2G"))
+    dc_type_var   = ctk.StringVar(value=s.get("docker_type",   "PAPER"))
+    dc_ver_var    = ctk.StringVar(value=s.get("docker_version","LATEST"))
+    dc_name_var   = ctk.StringVar(value=s.get("docker_name",   "mc-server"))
+
+    def _save_dc(*_):
+        for k, v in [("docker_image", dc_image_var), ("docker_port", dc_port_var),
+                      ("docker_ram",  dc_ram_var),   ("docker_type", dc_type_var),
+                      ("docker_version", dc_ver_var), ("docker_name", dc_name_var)]:
+            update_setting(k, v.get())
+
+    def row_entry(parent, label, var, width=160, placeholder=""):
+        r = ctk.CTkFrame(parent, fg_color="transparent"); r.pack(fill="x", pady=3)
+        ctk.CTkLabel(r, text=label, font=ctk.CTkFont(size=12),
+                     text_color=T["text"], width=180, anchor="w").pack(side="left")
+        e = ctk.CTkEntry(r, textvariable=var, width=width, height=28,
+                         font=ctk.CTkFont(size=11, family="Consolas"),
+                         fg_color=T["bg"], border_color=T["border"],
+                         text_color=T["text"], placeholder_text=placeholder)
+        e.pack(side="left")
+        e.bind("<FocusOut>", _save_dc); e.bind("<Return>", _save_dc)
+
+    row_entry(cc, "Container name",  dc_name_var,  placeholder="mc-server")
+    row_entry(cc, "Docker image",    dc_image_var, width=280, placeholder="itzg/minecraft-server")
+    row_entry(cc, "Port",            dc_port_var,  placeholder="25565")
+    row_entry(cc, "RAM limit",       dc_ram_var,   placeholder="2G")
+
+    r_type = ctk.CTkFrame(cc, fg_color="transparent"); r_type.pack(fill="x", pady=3)
+    ctk.CTkLabel(r_type, text="Server type", font=ctk.CTkFont(size=12),
+                 text_color=T["text"], width=180, anchor="w").pack(side="left")
+    ctk.CTkOptionMenu(r_type,
+                      values=["PAPER","PURPUR","VANILLA","FABRIC","FORGE","SPIGOT","BUKKIT"],
+                      variable=dc_type_var, command=lambda _: _save_dc(),
+                      font=ctk.CTkFont(size=12), width=140, height=28,
+                      fg_color=T["bg"], button_color=T["border"],
+                      button_hover_color=T["muted"], text_color=T["text"],
+                      dropdown_fg_color=T["card"], dropdown_text_color=T["text"],
+                      dropdown_hover_color=T["border"]).pack(side="left", padx=(0, 12))
+    ctk.CTkLabel(r_type, text="MC version", font=ctk.CTkFont(size=12),
+                 text_color=T["text"], width=90, anchor="w").pack(side="left")
+    ctk.CTkEntry(r_type, textvariable=dc_ver_var, width=100, height=28,
+                 font=ctk.CTkFont(size=11, family="Consolas"),
+                 fg_color=T["bg"], border_color=T["border"], text_color=T["text"],
+                 placeholder_text="LATEST").pack(side="left")
+
+    def _gen_compose():
+        path = load_settings().get("srv_path", SRV_PATH)
+        yaml = f"""version: "3.8"
+services:
+  {dc_name_var.get()}:
+    image: {dc_image_var.get()}
+    container_name: {dc_name_var.get()}
+    environment:
+      EULA: "TRUE"
+      TYPE: "{dc_type_var.get()}"
+      VERSION: "{dc_ver_var.get()}"
+      MEMORY: "{dc_ram_var.get()}"
+      USE_AIKAR_FLAGS: "true"
+    ports:
+      - "{dc_port_var.get()}:{dc_port_var.get()}"
+    volumes:
+      - ./data:/data
+    restart: unless-stopped
+    stdin_open: true
+    tty: true
+"""
+        dest = os.path.join(path, "docker-compose.yml")
+        try:
+            with open(dest, "w") as f: f.write(yaml)
+            show_toast("docker-compose.yml written!", T["start"])
+            log(f"  docker-compose.yml written to {dest}")
+            preview_box.configure(state="normal")
+            preview_box.delete("1.0", "end")
+            preview_box.insert("end", yaml)
+            preview_box.configure(state="disabled")
+        except Exception as ex:
+            show_toast(f"Error: {ex}", T["stop"])
+
+    ctk.CTkButton(ch, text="Generate compose file", height=26, width=160,
+                  font=ctk.CTkFont(size=11), fg_color=T["start"],
+                  hover_color=T["start"], text_color="#000",
+                  command=_gen_compose).pack(side="right")
+
+    # Compose file preview
+    pb, ph = _card("docker-compose.yml Preview")
+    preview_box = ctk.CTkTextbox(pb, font=ctk.CTkFont(size=11, family="Consolas"),
+                                  height=180, fg_color=T["bg"], text_color=T["text"],
+                                  state="disabled")
+    preview_box.pack(fill="x")
+    path = load_settings().get("srv_path", SRV_PATH)
+    compose_path = os.path.join(path, "docker-compose.yml")
+    if os.path.exists(compose_path):
+        try:
+            preview_box.configure(state="normal")
+            preview_box.insert("end", open(compose_path).read())
+            preview_box.configure(state="disabled")
+        except: pass
+
+    # ── Container control ──────────────────────────────────
+    ctrl_b, ctrl_h = _card("Container Control")
+    dc_status = ctk.CTkLabel(ctrl_b, text="● Unknown",
+                              font=ctk.CTkFont(size=13, weight="bold"),
+                              text_color=T["muted"])
+    dc_status.pack(side="left")
+
+    dc_log_box = ctk.CTkTextbox(ctrl_b, font=ctk.CTkFont(size=10, family="Consolas"),
+                                 height=120, fg_color=T["bg"], text_color=T["text"],
+                                 state="disabled")
+
+    def _dc_log(msg):
+        try:
+            dc_log_box.configure(state="normal")
+            dc_log_box.insert("end", msg + "\n")
+            dc_log_box.configure(state="disabled")
+            dc_log_box.see("end")
+        except: pass
+
+    def _dc_status():
+        name = dc_name_var.get().strip() or "mc-server"
+        try:
+            r = subprocess.run(f"docker inspect --format={{{{.State.Status}}}} {name}",
+                               shell=True, capture_output=True, text=True,
+                               creationflags=CREATE_NO_WINDOW, timeout=5)
+            st = r.stdout.strip()
+            if st == "running":
+                dc_status.configure(text="● Running", text_color=T["start"])
+            elif st:
+                dc_status.configure(text=f"● {st.capitalize()}", text_color=T["muted"])
+            else:
+                dc_status.configure(text="● Not created", text_color=T["stop"])
+        except:
+            dc_status.configure(text="● Docker unavailable", text_color=T["stop"])
+
+    def _run_dc(cmd_str, label):
+        path = load_settings().get("srv_path", SRV_PATH)
+        def _work():
+            app.after(0, _dc_log, f"$ {cmd_str}")
+            try:
+                proc = subprocess.Popen(cmd_str, shell=True, cwd=path,
+                                        stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                        text=True, creationflags=CREATE_NO_WINDOW)
+                for line in proc.stdout:
+                    app.after(0, _dc_log, line.rstrip())
+                proc.wait()
+                app.after(0, _dc_status)
+                app.after(0, show_toast, f"{label} done", T["start"])
+            except Exception as ex:
+                app.after(0, _dc_log, f"Error: {ex}")
+        threading.Thread(target=_work, daemon=True).start()
+
+    name = dc_name_var.get().strip() or "mc-server"
+    br = ctk.CTkFrame(ctrl_h, fg_color="transparent"); br.pack(side="right")
+    for label, cmd in [
+        ("▶ Up",      "docker compose up -d"),
+        ("■ Down",    "docker compose down"),
+        ("↺ Restart", f"docker restart {name}"),
+        ("Logs",      f"docker logs --tail=50 {name}"),
+        ("Status",    None),
+    ]:
+        if label == "Status":
+            ctk.CTkButton(br, text="Refresh", width=70, height=26,
+                          font=ctk.CTkFont(size=11), fg_color="transparent",
+                          border_width=1, border_color=T["border"],
+                          text_color=T["muted"], hover_color=T["border"],
+                          command=_dc_status).pack(side="left", padx=(0, 4))
+        else:
+            fc = T["start"] if "Up" in label else (T["stop"] if "Down" in label else T["sync"])
+            ctk.CTkButton(br, text=label, width=74, height=26, font=ctk.CTkFont(size=11),
+                          fg_color=fc, hover_color=fc,
+                          text_color="#000" if fc != T["stop"] else "#fff",
+                          command=lambda c=cmd, l=label: _run_dc(c, l)
+                          ).pack(side="left", padx=(0, 4))
+
+    dc_log_box.pack(fill="x", pady=(10, 0))
+    _dc_status()
+
+    ctk.CTkFrame(scroll, height=12, fg_color="transparent").pack()
+
+
 # ── MULTI CTRL ────────────────────────────────────────────
 _mc_servers = {}
 
@@ -2739,6 +3790,10 @@ def stop_server():
             app.after(0, show_toast, "World pushed to GitHub!", T["sync"])
     else:
         log("  Upload on stop disabled - skipping push.")
+    if _remote_server_proc[0]:
+        try: _remote_server_proc[0].terminate()
+        except: pass
+        _remote_server_proc[0] = None
     set_status("Stopped", T["stop"]); log("Done.")
     set_all_buttons("normal")
 
@@ -2828,3 +3883,5 @@ def _splash_log():
 app.after(200, _splash_log)
 app.after(800, _load_all_addons)
 app.mainloop()
+
+
