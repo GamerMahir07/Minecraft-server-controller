@@ -1,3 +1,4 @@
 settings.json
 .gitignore
 .gitattributes
+__pycache__/
