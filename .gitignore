@@ -1,4 +1,6 @@
 settings.json
 .gitignore
 .gitattributes
-__pycache__/
+__pycache__
+_mc_ctrl_remote.py
+_mc_ctrl_state.json

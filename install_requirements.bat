@@ -1,86 +1,158 @@
 @echo off
-title MC Server Controller - Dependency Installer
+setlocal EnableDelayedExpansion
+chcp 65001 >nul
 color 0A
+title MC CTRL Installer
+
+cls
+
+echo ================================================================
+echo.
+echo   MC CTRL - Professional Dependency Installer
 
 echo.
-echo  =====================================================
-echo    MC Server Controller - Dependency Installer
-echo  =====================================================
+echo ================================================================
 echo.
 
-:: ── Check Python ──────────────────────────────────────────
-echo [1/4] Checking Python...
+REM ================================================================
+REM Python Check
+REM ================================================================
+
+echo [1/6] Checking Python...
+echo.
+
 python --version >nul 2>&1
-if errorlevel 1 (
-    echo  [!] Python not found in PATH.
-    echo  [!] Please download and install Python 3.x from:
-    echo      https://www.python.org/downloads/
-    echo      Make sure to check "Add Python to PATH" during install.
+IF ERRORLEVEL 1 (
+    color 0C
+    echo [ERROR] Python was not found on this system.
+    echo.
+    echo Install Python 3.11 or newer:
+    echo https://www.python.org/downloads/
+    echo.
+    echo IMPORTANT:
+    echo   - Enable "Add Python to PATH"
+    echo   - Restart terminal after installation
     echo.
     pause
     exit /b 1
 )
-for /f "tokens=*" %%i in ('python --version 2^>^&1') do echo  [OK] Found %%i
+
+python --version
+
 echo.
 
-:: ── Upgrade pip ───────────────────────────────────────────
-echo [2/4] Upgrading pip...
-python -m pip install --upgrade pip --quiet
-if errorlevel 1 (
-    echo  [!] Failed to upgrade pip. Continuing anyway...
-) else (
-    echo  [OK] pip is up to date.
-)
+REM ================================================================
+REM Upgrade pip
+REM ================================================================
+
+echo [2/6] Upgrading pip...
 echo.
 
-:: ── Install Python packages ───────────────────────────────
-echo [3/4] Installing Python packages...
+python -m pip install --upgrade pip
+
 echo.
 
-echo  Installing customtkinter...
-python -m pip install customtkinter
-...
+REM ================================================================
+REM Install Dependencies
+REM ================================================================
 
-echo  Installing psutil...
-python -m pip install psutil
-...
-
-echo  Installing matplotlib...
-python -m pip install matplotlib
-...
-
-echo  Installing tkinterdnd2...
-python -m pip install tkinterdnd2
-if errorlevel 1 (
-    echo  [!] Failed to install tkinterdnd2.
-) else (
-    echo  [OK] tkinterdnd2 installed.
-)
+echo [3/6] Installing required packages...
 echo.
 
-:: ── Check Git ─────────────────────────────────────────────
-echo [4/4] Checking Git...
-git --version >nul 2>&1
-if errorlevel 1 (
-    echo  [!] Git not found in PATH.
-    echo  [!] Please download and install Git from:
-    echo      https://git-scm.com/download/win
-    echo      Make sure to select "Add Git to PATH" during install.
+set packages=customtkinter psutil matplotlib tkinterdnd2 pillow
+
+for %%p in (%packages%) do (
+    echo ------------------------------------------------------------
+    echo Installing %%p ...
+    echo ------------------------------------------------------------
+
+    python -m pip install %%p
+
+    IF ERRORLEVEL 1 (
+        color 0C
+        echo FAILED: %%p
+        color 0A
+    ) ELSE (
+        echo SUCCESS: %%p installed.
+    )
+
     echo.
-) else (
-    for /f "tokens=*" %%i in ('git --version 2^>^&1') do echo  [OK] Found %%i
 )
+
+REM ================================================================
+REM Verify Imports
+REM ================================================================
+
+echo [4/6] Verifying modules...
 echo.
 
-:: ── Java reminder ─────────────────────────────────────────
-echo  -------------------------------------------------------
-echo   REMINDER: Java 21 is required to run the Minecraft
-echo   server. If not installed, download it from:
-echo   https://adoptium.net/temurin/releases/?version=21
-echo  -------------------------------------------------------
+python -c "import customtkinter, psutil, matplotlib, tkinterdnd2; from PIL import Image; print('All modules verified successfully.')"
+
+IF ERRORLEVEL 1 (
+    color 0C
+    echo.
+    echo WARNING: Some modules failed verification.
+    echo Try running as Administrator.
+    color 0A
+) ELSE (
+    echo.
+    echo All modules verified successfully.
+)
+
 echo.
 
-:: ── Done ──────────────────────────────────────────────────
-echo  All done! You can now run launcher.pyw
+REM ================================================================
+REM Git Check
+REM ================================================================
+
+echo [5/6] Checking Git...
 echo.
+
+git --version >nul 2>&1
+
+IF ERRORLEVEL 1 (
+    color 06
+    echo WARNING: Git is not installed.
+    echo.
+    echo Download Git here:
+    echo https://git-scm.com/download/win
+    color 0A
+) ELSE (
+    git --version
+)
+
+echo.
+
+REM ================================================================
+REM Java Reminder
+REM ================================================================
+
+echo [6/6] Java Reminder
+echo.
+echo Minecraft servers usually require Java 21.
+echo.
+echo Download Java here:
+echo https://adoptium.net/temurin/releases/?version=21
+
+echo.
+
+REM ================================================================
+REM Finish
+REM ================================================================
+
+color 0B
+
+echo ================================================================
+echo.
+echo INSTALLATION COMPLETE
+echo.
+echo You can now launch:
+echo.
+echo launcher.pyw
+echo.
+echo Thanks for using MC CTRL!
+echo.
+echo ================================================================
+echo.
+
 pause
