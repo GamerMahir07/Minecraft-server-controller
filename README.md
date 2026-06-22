@@ -190,9 +190,9 @@ https://adoptium.net/temurin/releases/?version=21
 
 | OS | Support |
 |---|---|
-| Windows | ✅ |
-| Linux | ✅ |
-| macOS | ✅ |
+| Windows | [OK] |
+| Linux | [OK] |
+| macOS | [OK] |
 
 ---
 
@@ -416,6 +416,6 @@ MC CTRL: yes
 ```
 
 ```text
-this launcher got enough customization to awaken the GPU 💀
+this launcher got enough customization to awaken the GPU 
 ```
 
