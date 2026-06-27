@@ -1,5 +1,5 @@
 """core/server.py — server process, perf loop, git sync, backup"""
-import logging, os, subprocess, threading, time, zipfile
+import logging, os, subprocess, sys, threading, time, zipfile
 from datetime import datetime
 
 try:
@@ -8,7 +8,7 @@ except ImportError:
     psutil = None
 
 from .constants import (
-    CREATE_NO_WINDOW, IS_WIN,
+    CREATE_NO_WINDOW, IS_WIN, IS_MAC,
     DEFAULT_SRV_PATH, DEFAULT_JAVA_PATH, REPO_URL,
     STRIP_RE, DONE_RE, SPARK_TPS, TPS_RE2,
     PLAYER_RE, LIST_NAMES_RE, CHAT_RE, JOIN_RE, LEAVE_RE,
@@ -178,59 +178,69 @@ def perf_loop():
     global perf_running
     perf_running = True
     java_proc = None
-    prev_disk = psutil.disk_io_counters() if hasattr(psutil, "disk_io_counters") else None
+    # Some Docker/Linux containers have no disk IO counters
+    try:
+        prev_disk = psutil.disk_io_counters()
+    except Exception:
+        prev_disk = None
     tick = 0
-    # Prime cpu_percent
-    try: psutil.cpu_percent(interval=None)
-    except Exception: pass
+    try:
+        psutil.cpu_percent(interval=None)
+    except Exception:
+        pass
     while perf_running:
         try:
             vm = psutil.virtual_memory()
             perf["ram_used"] = f"{vm.used/1024**3:.1f}/{vm.total/1024**3:.0f}GB"
             perf["ram_pct"]  = f"{vm.percent:.0f}%"
-            perf["cpu_sys"]  = f"{psutil.cpu_percent(interval=None):.0f}%"
-            if prev_disk is not None:
-                try:
-                    cur = psutil.disk_io_counters()
-                    if cur:
-                        delta = max((cur.read_bytes + cur.write_bytes) -
-                                    (prev_disk.read_bytes + prev_disk.write_bytes), 0)
-                        rate  = delta / 2.0
-                        perf["disk_io"] = (f"{rate/1048576:.1f} MB/s"
-                                           if rate >= 1048576 else f"{rate/1024:.1f} KB/s")
-                        prev_disk = cur
-                except Exception:
-                    perf["disk_io"] = "--"
-            if java_proc is None:
-                java_proc = find_java_proc()
-            if java_proc:
-                try:
-                    perf["ram_srv"] = f"{java_proc.memory_info().rss/1048576:.0f} MB"
-                    perf["cpu_srv"] = f"{java_proc.cpu_percent(interval=None):.0f}%"
-                    perf["threads"] = str(java_proc.num_threads())
-                except (psutil.NoSuchProcess, psutil.AccessDenied):
-                    java_proc = None
-                    perf["ram_srv"] = perf["cpu_srv"] = perf["threads"] = "--"
-            else:
+        except Exception:
+            pass
+        try:
+            perf["cpu_sys"] = f"{psutil.cpu_percent(interval=None):.0f}%"
+        except Exception:
+            pass
+        # Disk IO — optional, not available in all Docker environments
+        if prev_disk is not None:
+            try:
+                cur = psutil.disk_io_counters()
+                if cur and prev_disk:
+                    delta = max((cur.read_bytes + cur.write_bytes) -
+                                (prev_disk.read_bytes + prev_disk.write_bytes), 0)
+                    rate  = delta / 2.0
+                    perf["disk_io"] = (f"{rate/1048576:.1f} MB/s"
+                                       if rate >= 1048576 else f"{rate/1024:.1f} KB/s")
+                    prev_disk = cur
+            except Exception:
+                prev_disk = None
+                perf["disk_io"] = "N/A"
+        if java_proc is None:
+            java_proc = find_java_proc()
+        if java_proc:
+            try:
+                perf["ram_srv"] = f"{java_proc.memory_info().rss/1048576:.0f} MB"
+                perf["cpu_srv"] = f"{java_proc.cpu_percent(interval=None):.0f}%"
+                perf["threads"] = str(java_proc.num_threads())
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                java_proc = None
                 perf["ram_srv"] = perf["cpu_srv"] = perf["threads"] = "--"
-            if server_start_time:
-                e = int((datetime.now() - server_start_time).total_seconds())
-                h, r = divmod(e, 3600); m, s = divmod(r, 60)
-                perf["uptime"] = f"{h:02d}:{m:02d}:{s:02d}"
-            else:
-                perf["uptime"] = "--"
-            if server_ready and server_stdin:
-                try:
-                    if tick % 5  == 0: server_stdin.write("tps\n");  server_stdin.flush()
-                    if tick % 10 == 0: server_stdin.write("list\n"); server_stdin.flush()
-                except (BrokenPipeError, OSError):
-                    pass
-            tick += 1
-            if signals:
-                try: signals.sig_perf.emit()
-                except Exception: pass
-        except Exception as e:
-            logger.error(f"perf_loop: {e}")
+        else:
+            perf["ram_srv"] = perf["cpu_srv"] = perf["threads"] = "--"
+        if server_start_time:
+            e = int((datetime.now() - server_start_time).total_seconds())
+            h, r = divmod(e, 3600); m, s = divmod(r, 60)
+            perf["uptime"] = f"{h:02d}:{m:02d}:{s:02d}"
+        else:
+            perf["uptime"] = "--"
+        if server_ready and server_stdin:
+            try:
+                if tick % 5  == 0: server_stdin.write("tps\n");  server_stdin.flush()
+                if tick % 10 == 0: server_stdin.write("list\n"); server_stdin.flush()
+            except (BrokenPipeError, OSError):
+                pass
+        tick += 1
+        if signals:
+            try: signals.sig_perf.emit()
+            except Exception: pass
         time.sleep(2)
 
 
@@ -265,14 +275,12 @@ def send_server_cmd(cmd: str):
 
 # ── EULA check ─────────────────────────────────────────────────────────────────
 def check_and_accept_eula(path: str) -> bool:
-    """Returns True if eula=true, or auto-writes it after user confirms via toast."""
     eula_path = os.path.join(path, "eula.txt")
     try:
         if "eula=true" in open(eula_path, encoding="utf-8").read().lower():
             return True
     except FileNotFoundError:
         pass
-    # Write it automatically and inform user
     try:
         os.makedirs(path, exist_ok=True)
         with open(eula_path, "w", encoding="utf-8") as f:
@@ -286,6 +294,36 @@ def check_and_accept_eula(path: str) -> bool:
 
 
 # ── Start / Stop ───────────────────────────────────────────────────────────────
+def _build_java_cmd(java: str, ram: int) -> list[str]:
+    """Build Java command — Aikar flags on x86/x64, lightweight flags on ARM/Pi."""
+    import platform as _pl
+    machine = _pl.machine().lower()
+    is_arm  = any(m in machine for m in ("arm", "aarch64"))
+    base = [java, f"-Xms{max(1,ram//2)}G" if is_arm else f"-Xms{ram}G", f"-Xmx{ram}G"]
+    if is_arm:
+        # ARM/Pi: G1GC is less stable at low RAM; use simpler flags
+        flags = [
+            "-XX:+UseSerialGC" if ram <= 2 else "-XX:+UseG1GC",
+            "-XX:+DisableExplicitGC",
+            "-XX:+PerfDisableSharedMem",
+        ]
+    else:
+        flags = [
+            "-XX:+UseG1GC", "-XX:+ParallelRefProcEnabled",
+            "-XX:MaxGCPauseMillis=200", "-XX:+UnlockExperimentalVMOptions",
+            "-XX:+DisableExplicitGC", "-XX:G1NewSizePercent=30",
+            "-XX:G1MaxNewSizePercent=40", "-XX:G1HeapRegionSize=8M",
+            "-XX:G1ReservePercent=20", "-XX:G1HeapWastePercent=5",
+            "-XX:G1MixedGCCountTarget=4", "-XX:InitiatingHeapOccupancyPercent=15",
+            "-XX:G1MixedGCLiveThresholdPercent=90", "-XX:G1RSetUpdatingPauseTimePercent=5",
+            "-XX:SurvivorRatio=32", "-XX:+PerfDisableSharedMem",
+            "-XX:MaxTenuringThreshold=1",
+            "-Dusing.aikars.flags=https://mcflags.emc.gs",
+            "-Daikars.new.flags=true",
+        ]
+    return base + flags + ["-jar", "server.jar", "--nogui"]
+
+
 def start_server():
     global server_proc, server_stdin, server_pid, server_start_time
     global perf_running, server_ready, player_count
@@ -298,7 +336,8 @@ def start_server():
     path = s.get("srv_path",  DEFAULT_SRV_PATH)
     java = s.get("java_path", DEFAULT_JAVA_PATH)
     repo = s.get("repo_url",  REPO_URL)
-    ram  = s.get("ram_gb",    s.get("server_ram_gb", 2))
+    # Support both key names for backwards-compat
+    ram  = int(s.get("ram_gb", s.get("server_ram_gb", 2)))
 
     if not check_and_accept_eula(path):
         _emit_log("  Cancelled — EULA not accepted.", "log")
@@ -311,22 +350,30 @@ def start_server():
         run_cmd_log("git pull origin main", cwd=path)
 
     _emit_log("Launching with Aikar flags…", "log")
-    java_cmd = (
-        f'"{java}" -Xms{ram}G -Xmx{ram}G -XX:+UseG1GC -XX:+ParallelRefProcEnabled '
-        '-XX:MaxGCPauseMillis=200 -XX:+UnlockExperimentalVMOptions -XX:+DisableExplicitGC '
-        '-XX:G1NewSizePercent=30 -XX:G1MaxNewSizePercent=40 -XX:G1HeapRegionSize=8M '
-        '-XX:G1ReservePercent=20 -XX:G1HeapWastePercent=5 -XX:G1MixedGCCountTarget=4 '
-        '-XX:InitiatingHeapOccupancyPercent=15 -XX:G1MixedGCLiveThresholdPercent=90 '
-        '-XX:G1RSetUpdatingPauseTimePercent=5 -XX:SurvivorRatio=32 '
-        '-XX:+PerfDisableSharedMem -XX:MaxTenuringThreshold=1 '
-        '-Dusing.aikars.flags=https://mcflags.emc.gs -Daikars.new.flags=true '
-        '-jar server.jar --nogui'
+    java_cmd = _build_java_cmd(java, ram)
+
+    # Popen kwargs — platform-aware
+    popen_kw = dict(
+        cwd=path,
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        bufsize=1,
     )
+    if IS_WIN:
+        popen_kw["creationflags"] = CREATE_NO_WINDOW
+    else:
+        # On Linux/Mac: don't inherit extra fds; start new process group
+        popen_kw["close_fds"] = True
+        popen_kw["start_new_session"] = True
+
     try:
-        server_proc = subprocess.Popen(
-            java_cmd, shell=True, cwd=path,
-            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-            text=True, bufsize=1, creationflags=CREATE_NO_WINDOW)
+        server_proc = subprocess.Popen(java_cmd, **popen_kw)
+    except FileNotFoundError:
+        _emit_log(f"  Java not found: '{java}'. Install Java or set path in Settings.", "log")
+        _emit_status("Stopped", _t("stop"))
+        return
     except Exception as ex:
         _emit_log(f"  Failed to start: {ex}", "log")
         _emit_status("Stopped", _t("stop"))
@@ -359,22 +406,24 @@ def stop_server():
         except (BrokenPipeError, OSError): pass
         finally: server_stdin = None
 
-    # PID-specific kill — never taskkill /IM java.exe
+    perf_running = False   # signal perf_loop to exit after current sleep
+
+    # PID-specific kill
     if server_pid:
         try:
             if IS_WIN:
                 subprocess.run(f"taskkill /F /PID {server_pid}", shell=True,
                                capture_output=True, creationflags=CREATE_NO_WINDOW)
             else:
-                import signal as _sig, os as _os
-                try: _os.kill(server_pid, _sig.SIGTERM)
+                import signal as _sig
+                try: os.kill(server_pid, _sig.SIGTERM)
                 except ProcessLookupError: pass
             _emit_log("  Process terminated.", "log")
         except Exception as e:
             _emit_log(f"  Error: {e}", "log")
 
     server_proc = server_pid = server_start_time = None
-    server_ready = perf_running = False
+    server_ready = False
     for k in ("tps", "latency", "players", "uptime", "ram_srv", "cpu_srv", "threads"):
         perf[k] = "--"
 
@@ -417,7 +466,6 @@ def sync_git():
 
 
 def run_repair():
-    """Check server folder, java, jar, write eula."""
     s    = load_settings()
     path = s.get("srv_path", DEFAULT_SRV_PATH)
     java = s.get("java_path", DEFAULT_JAVA_PATH)
@@ -437,8 +485,10 @@ def run_repair():
                            timeout=5, creationflags=CREATE_NO_WINDOW)
         ver = (r.stderr or r.stdout or "").strip().splitlines()
         _emit_log(f"  Java: {ver[0] if ver else 'unknown'}", "log")
+    except FileNotFoundError:
+        _emit_log(f"  Java '{java}' not found — install Java or set path in Settings.", "log")
     except Exception as ex:
-        _emit_log(f"  Java not found: {ex}", "log")
+        _emit_log(f"  Java error: {ex}", "log")
     check_and_accept_eula(path)
     repo = s.get("repo_url", REPO_URL)
     if repo:
@@ -559,7 +609,6 @@ def _backup_to_gdrive(zip_path: str, s: dict):
 
 
 def calc_world_size(path: str) -> str:
-    """Return human-readable world folder size string."""
     try:
         dirs = [os.path.join(path, d) for d in ("world", "world_nether", "world_the_end")
                 if os.path.isdir(os.path.join(path, d))]

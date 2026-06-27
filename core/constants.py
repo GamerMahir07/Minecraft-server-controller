@@ -16,22 +16,37 @@ def _find_file(*candidates):
     for p in candidates:
         if p and os.path.exists(p):
             return p
-    return candidates[-1]
+    return ""
 
 IS_WIN = sys.platform == "win32"
+IS_MAC = sys.platform == "darwin"
+IS_LIN = sys.platform.startswith("linux")
+IS_PI  = IS_LIN and (
+    os.path.exists("/proc/device-tree/model") and
+    "raspberry" in open("/proc/device-tree/model", "rb").read().decode("utf-8","ignore").lower()
+    if os.path.exists("/proc/device-tree/model") else False
+)
 CREATE_NO_WINDOW = 0x08000000 if IS_WIN else 0
 
-ICON_PATH = _find_file(
-    os.path.join(_ASSETS_DIR, "icon.ico"),
-    os.path.join(_ASSETS_DIR, "icon.png"),
-    os.path.join(_BASE_DIR,   "icon.ico"),
-    os.path.join(_BASE_DIR,   "icon.png"),
-    "",
-)
+# Icon: prefer .ico on Windows (taskbar), .png elsewhere
+if IS_WIN:
+    ICON_PATH = _find_file(
+        os.path.join(_ASSETS_DIR, "icon.ico"),
+        os.path.join(_ASSETS_DIR, "icon.png"),
+        os.path.join(_BASE_DIR,   "icon.ico"),
+        os.path.join(_BASE_DIR,   "icon.png"),
+    )
+else:
+    ICON_PATH = _find_file(
+        os.path.join(_ASSETS_DIR, "icon.png"),
+        os.path.join(_ASSETS_DIR, "icon.ico"),
+        os.path.join(_BASE_DIR,   "icon.png"),
+        os.path.join(_BASE_DIR,   "icon.ico"),
+    )
+
 THEMES_FILE = _find_file(
     os.path.join(_THEMES_DIR, "themes_all_128.txt"),
     os.path.join(_BASE_DIR,   "themes_all_128.txt"),
-    "",
 )
 SETTINGS_FILE  = os.path.join(_BASE_DIR, "settings.json")
 FIRST_RUN_FLAG = os.path.join(_BASE_DIR, ".mc_ctrl_initialized")
@@ -42,6 +57,16 @@ REPO_URL          = ""
 APP_VERSION       = "8.0.0"
 UPDATE_URL        = "https://api.github.com/repos/GamerMahir07/minecraft-server/releases/latest"
 MODRINTH_API      = "https://api.modrinth.com/v2"
+
+# Font: Segoe UI is Windows-only; fall back gracefully on other platforms
+if IS_WIN:
+    UI_FONT = "Segoe UI"
+elif IS_MAC:
+    UI_FONT = "SF Pro Text"
+else:
+    UI_FONT = "Inter,Ubuntu,DejaVu Sans,Sans"
+
+MONO_FONT = "Consolas" if IS_WIN else "JetBrains Mono,Fira Code,DejaVu Sans Mono,Monospace"
 
 # Regex
 STRIP_RE       = re.compile(r'^\[[\d:]+\]\s*\[?(?:Server thread/)?(?:INFO|WARN|ERROR)\]?\s*(?:\[Not Secure\])?\s*:?\s*', re.I)

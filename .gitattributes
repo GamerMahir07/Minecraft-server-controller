@@ -1,0 +1,64 @@
+# ── Default: normalise line endings to LF in repo, checkout as native ────────
+* text=auto eol=lf
+
+# ── Python source: always LF ──────────────────────────────────────────────────
+*.py      text eol=lf diff=python
+*.pyw     text eol=lf diff=python
+*.pyi     text eol=lf
+
+# ── Config / data ─────────────────────────────────────────────────────────────
+*.json    text eol=lf
+*.toml    text eol=lf
+*.yaml    text eol=lf
+*.yml     text eol=lf
+*.cfg     text eol=lf
+*.ini     text eol=lf
+*.txt     text eol=lf
+*.md      text eol=lf diff=markdown
+*.rst     text eol=lf
+
+# ── Shell / batch ─────────────────────────────────────────────────────────────
+*.sh      text eol=lf
+*.bash    text eol=lf
+*.bat     text eol=crlf
+*.cmd     text eol=crlf
+*.ps1     text eol=crlf
+
+# ── Web ───────────────────────────────────────────────────────────────────────
+*.html    text eol=lf
+*.css     text eol=lf
+*.js      text eol=lf
+
+# ── Minecraft server config ───────────────────────────────────────────────────
+*.properties  text eol=lf
+*.mcfunction  text eol=lf
+*.mcmeta      text eol=lf
+
+# ── Binaries — never diff or mangle ──────────────────────────────────────────
+*.jar     binary
+*.zip     binary
+*.tar.gz  binary
+*.tar.bz2 binary
+*.png     binary
+*.ico     binary
+*.jpg     binary
+*.jpeg    binary
+*.gif     binary
+*.webp    binary
+*.mp3     binary
+*.ogg     binary
+*.wav     binary
+*.ttf     binary
+*.otf     binary
+*.woff    binary
+*.woff2   binary
+*.exe     binary
+*.dll     binary
+*.so      binary
+*.dylib   binary
+*.pyc     binary
+
+# ── Git LFS candidates (uncomment if using LFS) ───────────────────────────────
+# *.jar    filter=lfs diff=lfs merge=lfs -text
+# *.zip    filter=lfs diff=lfs merge=lfs -text
+# world/**  filter=lfs diff=lfs merge=lfs -text

@@ -1,6 +1,82 @@
+# ── MC CTRL runtime ──────────────────────────────────────────────────────────
 settings.json
-.gitignore
-.gitattributes
-__pycache__
-_mc_ctrl_remote.py
 _mc_ctrl_state.json
+_mc_ctrl_remote.py
+.mc_ctrl_initialized
+
+# ── Python ────────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.venv/
+venv/
+env/
+*.egg-info/
+dist/
+build/
+*.spec
+
+# ── Minecraft server runtime ──────────────────────────────────────────────────
+# World data (large, use Git LFS or backup separately)
+world/
+world_nether/
+world_the_end/
+
+# Generated / downloaded at runtime
+libraries/
+versions/
+cache/
+logs/
+crash-reports/
+debug/
+generated/
+
+# Server runtime files (regenerated on first run)
+eula.txt
+server.properties
+usercache.json
+banned-players.json
+banned-ips.json
+server-icon.png
+
+# Keep these tracked (intentional config)
+# ops.json        ← track: intentional whitelist
+# whitelist.json  ← track: intentional whitelist
+
+# Plugins / mods (large binaries — track selectively or use LFS)
+plugins/*.jar
+mods/*.jar
+# Uncomment to ignore all plugin configs too:
+# plugins/
+
+# Backups (can be huge)
+backups/
+*.zip
+*.tar.gz
+*.tar.bz2
+
+# ── OS ────────────────────────────────────────────────────────────────────────
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+Thumbs.db
+desktop.ini
+ehthumbs.db
+
+# ── Editors ───────────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+*.orig
+
+# ── Secrets / keys ────────────────────────────────────────────────────────────
+*.pem
+*.key
+*.env
+.env*
+playit.toml

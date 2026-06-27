@@ -1,4 +1,4 @@
-"""ui/settings_tab.py — full Settings tab matching reference launcher"""
+"""ui/settings_tab.py — Settings tab with image-style pill rows"""
 import os, re, shutil, threading
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QFrame, QLabel, QPushButton,
@@ -22,6 +22,33 @@ def _toast(msg, color=None, ms=3000):
     if w: w.toast(msg, color or T["sync"], ms)
 
 
+def _row(label: str, sublabel: str = "") -> tuple[QFrame, QHBoxLayout]:
+    """Create a pill-style settings row card. Returns (frame, right_layout)."""
+    f = QFrame(); f.setObjectName("settings_row")
+    outer = QHBoxLayout(f); outer.setContentsMargins(14, 8, 14, 8); outer.setSpacing(10)
+    text_col = QVBoxLayout(); text_col.setSpacing(1)
+    tl = QLabel(label)
+    tl.setStyleSheet(f"color:{T['text']}; font-size:12px; font-weight:500; background:transparent;")
+    text_col.addWidget(tl)
+    if sublabel:
+        sl = QLabel(sublabel)
+        sl.setStyleSheet(f"color:{T['muted']}; font-size:10px; background:transparent;")
+        text_col.addWidget(sl)
+    outer.addLayout(text_col, 1)
+    right = QHBoxLayout(); right.setSpacing(6); right.setContentsMargins(0,0,0,0)
+    outer.addLayout(right)
+    return f, right
+
+
+def _section_label(text: str) -> QLabel:
+    l = QLabel(text.upper())
+    l.setObjectName("section_hdr")
+    l.setStyleSheet(
+        f"color:{T['muted']}; font-size:10px; font-weight:600; letter-spacing:1.2px;"
+        " background:transparent; padding:10px 2px 4px 2px;")
+    return l
+
+
 class SettingsTab(QWidget):
     def __init__(self, parent_win=None):
         super().__init__()
@@ -36,235 +63,185 @@ class SettingsTab(QWidget):
 
         s = load_settings()
 
-        # ── helpers ──────────────────────────────────────────────────────────
-        def _entry(parent_c, label_txt, key, default="", width=320, password=False, ph=""):
-            r = QHBoxLayout(); r.setSpacing(8)
-            l = QLabel(label_txt); l.setFixedWidth(200)
-            l.setStyleSheet(f"color:{T['text']}; font-size:12px; background:transparent;")
-            r.addWidget(l)
-            e = QLineEdit(str(s.get(key, default)))
+        # ── Row helpers ───────────────────────────────────────────────────────
+        def _entry_row(label, sublabel, key, default="", password=False, ph=""):
+            f, right = _row(label, sublabel)
+            e = QLineEdit(str(s.get(key, default))); e.setFixedWidth(240)
             if password: e.setEchoMode(QLineEdit.EchoMode.Password)
             if ph: e.setPlaceholderText(ph)
-            e.setFixedWidth(width)
             e.editingFinished.connect(lambda k=key, le=e: self._dirty.__setitem__(k, le.text().strip()))
-            r.addWidget(e)
+            right.addWidget(e)
             if password:
-                show_b = QPushButton("Show"); show_b.setFixedWidth(46); show_b.setFixedHeight(24)
-                def _tog(_e=e, _b=show_b):
-                    if _e.echoMode() == QLineEdit.EchoMode.Password:
-                        _e.setEchoMode(QLineEdit.EchoMode.Normal); _b.setText("Hide")
-                    else:
-                        _e.setEchoMode(QLineEdit.EchoMode.Password); _b.setText("Show")
-                show_b.clicked.connect(_tog); r.addWidget(show_b)
-            r.addStretch()
-            parent_c.layout().addLayout(r)
-            return e
+                sb = QPushButton("Show"); sb.setFixedWidth(46); sb.setFixedHeight(26)
+                def _tog(_e=e, _b=sb):
+                    vis = _e.echoMode() == QLineEdit.EchoMode.Normal
+                    _e.setEchoMode(QLineEdit.EchoMode.Password if vis else QLineEdit.EchoMode.Normal)
+                    _b.setText("Show" if vis else "Hide")
+                sb.clicked.connect(_tog); right.addWidget(sb)
+            lay.addWidget(f); return e
 
-        def _browse(parent_c, label_txt, key, default="", is_file=False):
-            r = QHBoxLayout(); r.setSpacing(8)
-            l = QLabel(label_txt); l.setFixedWidth(200)
-            l.setStyleSheet(f"color:{T['text']}; font-size:12px; background:transparent;")
-            r.addWidget(l)
-            e = QLineEdit(str(s.get(key, default))); e.setFixedWidth(280)
+        def _browse_row(label, sublabel, key, default="", is_file=False):
+            f, right = _row(label, sublabel)
+            e = QLineEdit(str(s.get(key, default))); e.setFixedWidth(200)
             e.editingFinished.connect(lambda k=key, le=e: self._dirty.__setitem__(k, le.text().strip()))
-            r.addWidget(e)
-            def _br(_e=e, _k=key, _f=is_file):
-                p = (QFileDialog.getOpenFileName(self, label_txt)[0] if _f
-                     else QFileDialog.getExistingDirectory(self, label_txt))
+            right.addWidget(e)
+            def _br(_e=e, _k=key):
+                p = (QFileDialog.getOpenFileName(self, label)[0] if is_file
+                     else QFileDialog.getExistingDirectory(self, label))
                 if p: _e.setText(p); self._dirty[_k] = p
-            b = QPushButton("Browse"); b.setFixedWidth(70); b.clicked.connect(_br); r.addWidget(b)
-            r.addStretch(); parent_c.layout().addLayout(r)
-            return e
+            b = QPushButton("Browse"); b.setFixedWidth(64); b.clicked.connect(_br)
+            right.addWidget(b); lay.addWidget(f); return e
 
-        def _toggle(parent_c, label_txt, key, default=False):
-            r = QHBoxLayout()
-            l = QLabel(label_txt); l.setFixedWidth(300)
-            l.setStyleSheet(f"color:{T['text']}; font-size:12px; background:transparent;")
-            r.addWidget(l); r.addStretch()
+        def _toggle_row(label, sublabel, key, default=False, on_change=None):
+            f, right = _row(label, sublabel)
             cb = QCheckBox(); cb.setChecked(bool(s.get(key, default)))
-            cb.stateChanged.connect(lambda v, k=key: self._dirty.__setitem__(k, bool(v)))
-            r.addWidget(cb); parent_c.layout().addLayout(r); return cb
+            def _changed(v, k=key):
+                self._dirty[k] = bool(v)
+                if on_change: on_change(bool(v))
+            cb.stateChanged.connect(_changed)
+            right.addWidget(cb); lay.addWidget(f); return cb
 
-        def _slider(parent_c, label_txt, key, lo, hi, default, fmt="{:.0f}"):
-            r = QHBoxLayout(); r.setSpacing(8)
-            l = QLabel(label_txt); l.setFixedWidth(200)
-            l.setStyleSheet(f"color:{T['text']}; font-size:12px; background:transparent;")
-            r.addWidget(l)
+        def _slider_row(label, sublabel, key, lo, hi, default, fmt="{:.0f}"):
+            f, right = _row(label, sublabel)
             sl = QSlider(Qt.Orientation.Horizontal); sl.setRange(lo, hi)
-            sl.setValue(int(s.get(key, default))); sl.setFixedWidth(200)
+            sl.setValue(int(s.get(key, default))); sl.setFixedWidth(160)
             val_l = QLabel(fmt.format(s.get(key, default)))
-            val_l.setFixedWidth(60); val_l.setStyleSheet(f"color:{T['sync']}; background:transparent;")
-            sl.valueChanged.connect(lambda v, vl=val_l, k=key, f=fmt: (
-                vl.setText(f.format(v)), self._dirty.__setitem__(k, v)))
-            r.addWidget(sl); r.addWidget(val_l); r.addStretch()
-            parent_c.layout().addLayout(r); return sl
+            val_l.setFixedWidth(54)
+            val_l.setStyleSheet(f"color:{T['sync']}; font-weight:600; background:transparent;")
+            sl.valueChanged.connect(lambda v, vl=val_l, k=key, ff=fmt: (
+                vl.setText(ff.format(v)), self._dirty.__setitem__(k, v)))
+            right.addWidget(sl); right.addWidget(val_l)
+            lay.addWidget(f); return sl
 
-        def _section(title):
-            c = card(); c.layout().addWidget(lbl(title, header=True)); c.layout().addWidget(hline())
-            return c
+        def _combo_row(label, sublabel, key, items, default=""):
+            f, right = _row(label, sublabel)
+            cb = QComboBox(); cb.addItems(items); cb.setFixedWidth(140)
+            cur = s.get(key, default)
+            idx = cb.findText(str(cur))
+            if idx >= 0: cb.setCurrentIndex(idx)
+            cb.currentTextChanged.connect(lambda v, k=key: self._dirty.__setitem__(k, v))
+            right.addWidget(cb); lay.addWidget(f); return cb
 
-        # ── Server ──────────────────────────────────────────────────────────
-        sc = _section("SERVER")
-        _browse(sc, "Server Folder",    "srv_path",   DEFAULT_SRV_PATH)
-        _browse(sc, "Java Executable",  "java_path",  DEFAULT_JAVA_PATH, is_file=True)
-        _slider(sc, "RAM (GB)",         "server_ram_gb", 1, 32, 2, "{:.0f} GB")
-        _entry( sc, "Server Port",      "server_port",   "25565", width=100)
-        _entry( sc, "Server Type",      "server_type",   "paper",  width=140)
-        _entry( sc, "MC Version",       "mc_version",    "1.20.1", width=120)
-        _toggle(sc, "Online Mode (require paid account)", "online_mode", True)
-        lay.addWidget(sc)
 
-        # ── GitHub Backup ────────────────────────────────────────────────────
-        gc = _section("GITHUB BACKUP")
-        _entry( gc, "GitHub Repo URL",       "repo_url",        "",    width=360, ph="https://github.com/user/repo.git")
-        _toggle(gc, "Upload world on server stop", "upload_on_stop",  True)
-        _toggle(gc, "Enable auto-upload",          "auto_upload",     False)
-        _slider(gc, "Auto-upload interval (mins)", "auto_upload_mins", 5, 120, 10, "{:.0f} min")
-        lay.addWidget(gc)
+        # ── SERVER ───────────────────────────────────────────────────────────
+        lay.addWidget(_section_label("Server"))
+        _browse_row("Server Folder",   "Path to your server .jar directory", "srv_path",  DEFAULT_SRV_PATH)
+        _browse_row("Java Executable", "Full path or just 'java'",           "java_path", DEFAULT_JAVA_PATH, is_file=True)
+        _slider_row("RAM (GB)",        "Heap memory for the server JVM",     "ram_gb",    1, 32, 2, "{:.0f} GB")
+        _entry_row( "Server Port",     "Default: 25565",                     "server_port", "25565")
+        _combo_row( "Server Type",     "Used for modpack search defaults",   "server_type",
+                    ["paper","spigot","fabric","forge","quilt","neoforge","purpur","vanilla"], "paper")
+        _entry_row( "MC Version",      "e.g. 1.21.4",                        "mc_version",  "1.21.4")
+        _toggle_row("Online Mode",     "Require paid Minecraft account",     "online_mode", True)
 
-        # ── Google Drive ─────────────────────────────────────────────────────
-        gdc = _section("GOOGLE DRIVE BACKUP (via rclone)")
-        _entry(gdc, "rclone remote name",    "gdrive_remote", "gdrive",     width=160)
-        _entry(gdc, "Destination folder",    "gdrive_folder", "MC_Backups", width=200)
-        note = lbl("Run:  rclone config  — to set up your Google Drive remote.", muted=True)
-        gdc.layout().addWidget(note)
-        test_b = QPushButton("Test rclone"); test_b.setFixedWidth(110); test_b.setFixedHeight(26)
-        test_b.clicked.connect(self._test_rclone); gdc.layout().addWidget(test_b)
-        lay.addWidget(gdc)
+        # ── GITHUB BACKUP ─────────────────────────────────────────────────────
+        lay.addWidget(_section_label("GitHub Backup"))
+        _entry_row( "Repo URL",              "https://github.com/user/repo.git", "repo_url", "")
+        _toggle_row("Upload on stop",        "Push world to GitHub when server stops", "upload_on_stop", True)
+        _toggle_row("Auto-upload",           "Periodic background git push",           "auto_upload",    False)
+        _slider_row("Auto-upload interval",  "Minutes between auto uploads",           "auto_upload_mins", 5, 120, 10, "{:.0f} min")
 
-        # ── Appearance ───────────────────────────────────────────────────────
-        apc = _section("APPEARANCE")
-        _toggle(apc, "Log panel on left",          "log_left",   False)
-        _toggle(apc, "Show chat & events panel",   "show_chat",  True)
-        _toggle(apc, "Show performance stats",     "show_perf",  True)
-        _toggle(apc, "Mini / compact mode",        "mini_mode",  False)
-        _toggle(apc, "Fullscreen on launch",       "fullscreen", False)
+        # ── GOOGLE DRIVE ──────────────────────────────────────────────────────
+        lay.addWidget(_section_label("Google Drive (rclone)"))
+        _entry_row("rclone remote",     "Name configured in rclone config", "gdrive_remote", "gdrive")
+        _entry_row("Destination folder","Remote folder for backups",        "gdrive_folder", "MC_Backups")
+        # Test button row
+        tr, tright = _row("Test rclone", "Verify rclone can list remotes")
+        tb2 = QPushButton("Test"); tb2.setFixedWidth(72); tb2.setFixedHeight(28)
+        tb2.clicked.connect(self._test_rclone); tright.addWidget(tb2); lay.addWidget(tr)
 
-        # Glossy UI toggle — applies immediately
-        glossy_row = QHBoxLayout(); glossy_row.setContentsMargins(0, 2, 0, 2)
-        glossy_lbl = QLabel("Glossy UI"); glossy_lbl.setStyleSheet(f"color:{T['text']}; font-size:12px; background:transparent;")
-        glossy_row.addWidget(glossy_lbl); glossy_row.addStretch()
-        glossy_cb = QCheckBox()
-        glossy_cb.setChecked(load_settings().get("glossy_ui", False))
-        def _on_glossy(state):
-            w = _win()
-            if w: w.apply_glossy(bool(state))
-        glossy_cb.stateChanged.connect(_on_glossy)
-        glossy_row.addWidget(glossy_cb)
-        apc.layout().addLayout(glossy_row)
+        # ── APPEARANCE ────────────────────────────────────────────────────────
+        lay.addWidget(_section_label("Appearance"))
+        _toggle_row("Log panel on left",       "", "log_left",  False)
+        _toggle_row("Show chat & events",      "", "show_chat", True)
+        _toggle_row("Show performance stats",  "", "show_perf", True)
+        _toggle_row("Fullscreen on launch",    "", "fullscreen", False)
 
-        # Side tabs toggle — applies immediately
-        sidetab_row = QHBoxLayout(); sidetab_row.setContentsMargins(0, 2, 0, 2)
-        sidetab_lbl = QLabel("Tabs on left side"); sidetab_lbl.setStyleSheet(f"color:{T['text']}; font-size:12px; background:transparent;")
-        sidetab_row.addWidget(sidetab_lbl); sidetab_row.addStretch()
-        sidetab_cb = QCheckBox()
-        sidetab_cb.setChecked(load_settings().get("side_tabs", False))
-        def _on_sidetabs(state):
-            w = _win()
-            if w: w.apply_side_tabs(bool(state))
-        sidetab_cb.stateChanged.connect(_on_sidetabs)
-        sidetab_row.addWidget(sidetab_cb)
-        apc.layout().addLayout(sidetab_row)
+        # ── REMOTE DASHBOARD ──────────────────────────────────────────────────
+        lay.addWidget(_section_label("Remote Dashboard"))
+        _entry_row("Web UI Port",     "Port for the remote control web UI", "remote_port",     "25580")
+        _entry_row("Password",        "Blank = no auth (not recommended)",  "remote_password", "", password=True)
 
-        lay.addWidget(apc)
+        # ── PLAYIT.GG ────────────────────────────────────────────────────────
+        lay.addWidget(_section_label("playit.gg"))
+        _browse_row("playit binary", "Path to the playit agent executable", "playit_path", "", is_file=True)
 
-        # ── Remote Dashboard ─────────────────────────────────────────────────
-        rdc = _section("REMOTE DASHBOARD")
-        _entry(rdc, "Web UI Port",           "remote_port",     "25580", width=100)
-        _entry(rdc, "Password (blank=none)", "remote_password", "",      width=200, password=True)
-        lay.addWidget(rdc)
+        # ── UPDATES ──────────────────────────────────────────────────────────
+        lay.addWidget(_section_label("Updates"))
+        ur, uright = _row(f"MC CTRL  v{APP_VERSION}", "Check for new releases on GitHub")
+        chk_b = QPushButton("Check Now"); chk_b.setFixedWidth(100); chk_b.setFixedHeight(28)
+        chk_b.clicked.connect(self._check_update); uright.addWidget(chk_b); lay.addWidget(ur)
 
-        # ── playit.gg ────────────────────────────────────────────────────────
-        ptc = _section("PLAYIT.GG")
-        _browse(ptc, "playit binary path", "playit_path", "", is_file=True)
-        lay.addWidget(ptc)
+        # ── ADDONS ───────────────────────────────────────────────────────────
+        lay.addWidget(_section_label("Addons"))
+        ar, aright = _row("Addons folder", "Drop .py addon scripts into addons/")
+        open_b = QPushButton("Open Folder"); open_b.setFixedWidth(100); open_b.setFixedHeight(28)
+        open_b.clicked.connect(lambda: self._open_folder(_ADDONS_DIR)); aright.addWidget(open_b)
+        lay.addWidget(ar)
 
-        # ── Updates ──────────────────────────────────────────────────────────
-        upc = _section("UPDATES")
-        ur = QHBoxLayout()
-        ur.addWidget(lbl(f"MC CTRL  v{APP_VERSION}", muted=True))
-        chk_b = QPushButton("Check for Updates"); chk_b.setFixedHeight(28)
-        chk_b.clicked.connect(self._check_update); ur.addWidget(chk_b)
-        ur.addStretch(); upc.layout().addLayout(ur)
-        lay.addWidget(upc)
-
-        # ── Addons ───────────────────────────────────────────────────────────
-        adc = _section("ADDONS")
-        adc.layout().addWidget(lbl("Drop .py addon scripts into the 'addons/' folder next to the launcher.", muted=True))
-        open_addons_b = QPushButton("Open addons/"); open_addons_b.setFixedWidth(120); open_addons_b.setFixedHeight(28)
-        open_addons_b.clicked.connect(lambda: self._open_folder(_ADDONS_DIR))
-        adc.layout().addWidget(open_addons_b)
-        lay.addWidget(adc)
-
-        # ── Repair & Maintenance ─────────────────────────────────────────────
-        rpc = _section("REPAIR & MAINTENANCE")
-        mb = QHBoxLayout()
-        repair_b = QPushButton("Run Repair"); repair_b.setFixedHeight(30)
-        repair_b.setStyleSheet(f"QPushButton {{ background:transparent; color:{T['sync']}; border:1px solid {T['sync']}; border-radius:6px; }}")
+        # ── REPAIR ───────────────────────────────────────────────────────────
+        lay.addWidget(_section_label("Repair & Maintenance"))
+        rr, rright = _row("Repair", "Check Java, EULA, server.jar, git pull")
+        repair_b = QPushButton("Run Repair"); repair_b.setFixedWidth(100); repair_b.setFixedHeight(28)
+        repair_b.setObjectName("sync")
         repair_b.clicked.connect(lambda: threading.Thread(target=run_repair, daemon=True).start())
-        mb.addWidget(repair_b)
-        uninst_b = QPushButton("Uninstall Wizard"); uninst_b.setFixedHeight(30)
-        uninst_b.setStyleSheet(f"QPushButton {{ background:transparent; color:{T['stop']}; border:1px solid {T['stop']}; border-radius:6px; }}")
-        uninst_b.clicked.connect(self._uninstall_wizard)
-        mb.addWidget(uninst_b); mb.addStretch(); rpc.layout().addLayout(mb)
-        lay.addWidget(rpc)
+        rright.addWidget(repair_b)
+        uninst_b = QPushButton("Uninstall…"); uninst_b.setFixedWidth(100); uninst_b.setFixedHeight(28)
+        uninst_b.setStyleSheet(
+            f"QPushButton {{ background:transparent; color:{T['stop']};"
+            f" border:1px solid {T['stop']}; border-radius:7px; }}")
+        uninst_b.clicked.connect(self._uninstall_wizard); rright.addWidget(uninst_b)
+        lay.addWidget(rr)
 
-        # ── Theme Creator ────────────────────────────────────────────────────
-        tcc = _section("THEME CREATOR")
-        tcc.layout().addWidget(lbl("Build a custom theme. Color swatches update live as you type.", muted=True))
+        # ── THEME CREATOR ────────────────────────────────────────────────────
+        lay.addWidget(_section_label("Theme Creator"))
+        tc_card = card()
+        tc_card.layout().addWidget(lbl("Build a custom theme. Swatches update live.", muted=True))
 
-        name_mode_row = QHBoxLayout()
-        name_mode_row.addWidget(lbl("Name:", muted=True))
+        nm_row = QHBoxLayout()
+        nm_row.addWidget(lbl("Name:", muted=True))
         self._tc_name = QLineEdit(); self._tc_name.setPlaceholderText("My Theme"); self._tc_name.setFixedWidth(200)
-        name_mode_row.addWidget(self._tc_name)
-        name_mode_row.addSpacing(16)
-        name_mode_row.addWidget(lbl("Mode:", muted=True))
-        self._tc_mode = QComboBox(); self._tc_mode.addItems(["dark", "light"]); self._tc_mode.setFixedWidth(90)
-        name_mode_row.addWidget(self._tc_mode); name_mode_row.addStretch()
-        tcc.layout().addLayout(name_mode_row)
+        nm_row.addWidget(self._tc_name); nm_row.addSpacing(16)
+        nm_row.addWidget(lbl("Mode:", muted=True))
+        self._tc_mode = QComboBox(); self._tc_mode.addItems(["dark","light"]); self._tc_mode.setFixedWidth(90)
+        nm_row.addWidget(self._tc_mode); nm_row.addStretch()
+        tc_card.layout().addLayout(nm_row)
 
         TC_FIELDS = [
-            ("bg",      "#1a1a2e", "Background"),
-            ("card",    "#16213e", "Card / panel"),
-            ("border",  "#0f3460", "Border"),
-            ("text",    "#e0e0e0", "Text"),
-            ("muted",   "#555555", "Muted text"),
-            ("start",   "#22c55e", "Start / success"),
-            ("stop",    "#ef4444", "Stop / danger"),
-            ("sync",    "#60a5fa", "Sync / accent"),
-            ("handoff", "#f59e0b", "Warning / handoff"),
+            ("bg","#1a1a2e","Background"), ("card","#16213e","Card"),
+            ("border","#0f3460","Border"), ("text","#e0e0e0","Text"),
+            ("muted","#555555","Muted"),   ("start","#22c55e","Success"),
+            ("stop","#ef4444","Danger"),   ("sync","#60a5fa","Accent"),
+            ("handoff","#f59e0b","Warning"),
         ]
         self._tc_entries: dict[str, QLineEdit] = {}
         self._tc_swatches: dict[str, QLabel] = {}
 
         for key, default, desc in TC_FIELDS:
             fr = QHBoxLayout(); fr.setSpacing(8)
-            desc_l = QLabel(desc); desc_l.setFixedWidth(150)
-            desc_l.setStyleSheet(f"color:{T['text']}; font-size:11px; background:transparent;")
-            fr.addWidget(desc_l)
-            swatch = QLabel(); swatch.setFixedSize(28, 26)
-            swatch.setStyleSheet(f"background:{default}; border:1px solid {T['border']}; border-radius:4px;")
-            fr.addWidget(swatch)
-            self._tc_swatches[key] = swatch
+            dl = QLabel(desc); dl.setFixedWidth(110)
+            dl.setStyleSheet(f"color:{T['text']}; font-size:11px; background:transparent;")
+            fr.addWidget(dl)
+            sw = QLabel(); sw.setFixedSize(28, 26)
+            sw.setStyleSheet(f"background:{default}; border:1px solid {T['border']}; border-radius:5px;")
+            fr.addWidget(sw); self._tc_swatches[key] = sw
             e = QLineEdit(default); e.setFixedWidth(110)
-            e.textChanged.connect(lambda txt, k=key, sw=swatch: self._tc_swatch_update(k, txt, sw))
-            fr.addWidget(e)
-            self._tc_entries[key] = e
-            pick_b = QPushButton("Pick"); pick_b.setFixedWidth(46); pick_b.setFixedHeight(24)
-            pick_b.clicked.connect(lambda _, k=key: self._tc_pick_color(k))
-            fr.addWidget(pick_b); fr.addStretch()
-            tcc.layout().addLayout(fr)
+            e.textChanged.connect(lambda txt, k=key, s2=sw: self._tc_swatch_update(k, txt, s2))
+            fr.addWidget(e); self._tc_entries[key] = e
+            pb = QPushButton("Pick"); pb.setFixedWidth(46); pb.setFixedHeight(24)
+            pb.clicked.connect(lambda _, k=key: self._tc_pick_color(k))
+            fr.addWidget(pb); fr.addStretch()
+            tc_card.layout().addLayout(fr)
 
         tc_btns = QHBoxLayout()
-        save_theme_b = QPushButton("Save to themes.py"); save_theme_b.setFixedHeight(30)
-        save_theme_b.setStyleSheet(f"QPushButton {{ background:{T['sync']}; color:#000; border:none; border-radius:6px; font-weight:700; }}")
-        save_theme_b.clicked.connect(self._tc_save)
-        apply_theme_b = QPushButton("Apply Now"); apply_theme_b.setFixedHeight(30)
-        apply_theme_b.setStyleSheet(f"QPushButton {{ background:transparent; color:{T['muted']}; border:1px solid {T['border']}; border-radius:6px; }}")
-        apply_theme_b.clicked.connect(self._tc_apply)
-        tc_btns.addWidget(save_theme_b); tc_btns.addWidget(apply_theme_b); tc_btns.addStretch()
-        tcc.layout().addLayout(tc_btns)
-        lay.addWidget(tcc)
+        stb = QPushButton("Save Theme"); stb.setFixedHeight(30)
+        stb.setStyleSheet(f"QPushButton {{ background:{T['sync']}; color:#000; border:none; border-radius:7px; font-weight:700; }}")
+        stb.clicked.connect(self._tc_save)
+        atb = QPushButton("Apply Now"); atb.setFixedHeight(30)
+        atb.clicked.connect(self._tc_apply)
+        tc_btns.addWidget(stb); tc_btns.addWidget(atb); tc_btns.addStretch()
+        tc_card.layout().addLayout(tc_btns)
+        lay.addWidget(tc_card)
         lay.addStretch()
 
         # ── Save bar ─────────────────────────────────────────────────────────
@@ -272,8 +249,11 @@ class SettingsTab(QWidget):
         sbl = QHBoxLayout(save_bar); sbl.setContentsMargins(14, 0, 14, 0); sbl.setSpacing(8)
         self._saved_lbl = QLabel(""); self._saved_lbl.setStyleSheet(f"color:{T['start']}; background:transparent;")
         sbl.addWidget(self._saved_lbl); sbl.addStretch()
-        apply_b = QPushButton("Apply & Restart UI"); apply_b.setFixedHeight(34)
-        apply_b.setStyleSheet(f"QPushButton {{ background:transparent; color:{T['muted']}; border:1px solid {T['border']}; border-radius:6px; padding:0 14px; }}")
+        apply_b = QPushButton("Save Settings"); apply_b.setFixedHeight(34)
+        apply_b.setStyleSheet(
+            f"QPushButton {{ background:transparent; color:{T['muted']};"
+            f" border:1px solid {T['border']}; border-radius:7px; padding:0 14px; }}"
+            f"QPushButton:hover {{ color:{T['text']}; border-color:{T['sync']}; }}")
         apply_b.clicked.connect(lambda: (self._save_all(), _toast("Restart the app to apply all changes", T["handoff"])))
         sbl.addWidget(apply_b)
         save_b2 = QPushButton("Save Settings"); save_b2.setFixedHeight(34)

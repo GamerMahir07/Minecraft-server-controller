@@ -9,6 +9,7 @@ from PyQt6.QtGui import QTextCursor, QColor, QFont, QTextCharFormat
 
 from core.themes import T
 from core.server import perf
+from core.constants import MONO_FONT
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +39,7 @@ def card(parent=None) -> QFrame:
 def hline() -> QFrame:
     line = QFrame()
     line.setFrameShape(QFrame.Shape.HLine)
-    line.setStyleSheet(f"color:{T['border']}; background:{T['border']}; border:none; max-height:1px;")
+    line.setObjectName("hline")
     return line
 
 
@@ -61,7 +62,7 @@ def btn(text: str, obj_name: str = "", parent=None) -> QPushButton:
 
 
 class LogWidget(QTextEdit):
-    """Auto-scrolling, read-only log widget."""
+    """Auto-scrolling, read-only log widget. Styled purely via QSS (no inline setStyleSheet)."""
 
     MAX_LINES = 500
 
@@ -69,12 +70,8 @@ class LogWidget(QTextEdit):
         super().__init__(parent)
         self.setReadOnly(True)
         self.setLineWrapMode(QTextEdit.LineWrapMode.WidgetWidth)
-        self.setFont(QFont("Consolas", 10))
-        self.setStyleSheet(
-            f"background:{T['bg']}; color:{T['text']};"
-            f" border:1px solid {T['border']}; border-radius:6px;"
-            f" font-family:Consolas,monospace; font-size:10px; padding:4px;"
-        )
+        self.setFont(QFont(MONO_FONT.split(",")[0], 10))
+        self.setObjectName("log_widget")
         self._line_count = 0
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
 
@@ -82,16 +79,12 @@ class LogWidget(QTextEdit):
         cur = self.textCursor()
         cur.movePosition(QTextCursor.MoveOperation.End)
         fmt = QTextCharFormat()
-        if color:
-            fmt.setForeground(QColor(color))
-        else:
-            fmt.setForeground(QColor(T["text"]))
+        fmt.setForeground(QColor(color if color else T["text"]))
         cur.setCharFormat(fmt)
         cur.insertText(text.rstrip() + "\n")
         self._line_count += 1
         if self._line_count > self.MAX_LINES:
             self._trim()
-        self.ensureCursorVisible()
         sb = self.verticalScrollBar()
         sb.setValue(sb.maximum())
 
@@ -108,22 +101,23 @@ class LogWidget(QTextEdit):
 
 
 class PerfStrip(QFrame):
-    """4-column performance stats strip matching reference."""
+    """8-stat performance grid."""
 
     STATS = [
-        ("tps",      "TPS",       None),
-        ("players",  "Players",   None),
-        ("ram_srv",  "Srv RAM",   None),
-        ("ram_pct",  "RAM %",     None),
-        ("cpu_srv",  "Srv CPU",   None),
-        ("cpu_sys",  "Sys CPU",   None),
-        ("uptime",   "Uptime",    None),
-        ("threads",  "Threads",   None),
+        ("tps",     "TPS"),
+        ("players", "Players"),
+        ("ram_srv", "Srv RAM"),
+        ("ram_pct", "RAM %"),
+        ("cpu_srv", "Srv CPU"),
+        ("cpu_sys", "Sys CPU"),
+        ("uptime",  "Uptime"),
+        ("threads", "Threads"),
     ]
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setObjectName("perf_strip")
+        self.setFixedHeight(80)
         self._val_labels: dict[str, QLabel] = {}
         outer = QVBoxLayout(self)
         outer.setContentsMargins(8, 6, 8, 6)
@@ -132,16 +126,12 @@ class PerfStrip(QFrame):
         hdr = QLabel("PERFORMANCE")
         hdr.setObjectName("header")
         outer.addWidget(hdr)
-
-        line = QFrame()
-        line.setFrameShape(QFrame.Shape.HLine)
-        line.setStyleSheet(f"color:{T['border']}; background:{T['border']}; max-height:1px;")
-        outer.addWidget(line)
+        outer.addWidget(hline())
 
         grid = QGridLayout()
         grid.setSpacing(4)
         COLS = 4
-        for i, (key, label, _) in enumerate(self.STATS):
+        for i, (key, label) in enumerate(self.STATS):
             row, col = i // COLS, i % COLS
             cell = QFrame()
             cell.setObjectName("card")
@@ -150,12 +140,9 @@ class PerfStrip(QFrame):
             cl.setSpacing(2)
             lbl_w = QLabel(label)
             lbl_w.setObjectName("muted")
-            lbl_w.setStyleSheet(f"color:{T['muted']}; font-size:9px; background:transparent;")
             cl.addWidget(lbl_w)
             val_lbl = QLabel("--")
-            val_lbl.setStyleSheet(
-                f"color:{T['sync']}; font-size:17px; font-weight:700; background:transparent;"
-            )
+            val_lbl.setObjectName("perf_val")
             cl.addWidget(val_lbl)
             self._val_labels[key] = val_lbl
             grid.addWidget(cell, row, col)
@@ -183,8 +170,6 @@ class PerfStrip(QFrame):
                 color = T["muted"]
             elif key in ("ram_srv", "ram_used"):
                 color = T["handoff"]
-            elif key == "players":
-                color = T["sync"]
             lbl_w.setText(str(val))
             lbl_w.setStyleSheet(
                 f"color:{color}; font-size:17px; font-weight:700; background:transparent;"
@@ -213,7 +198,6 @@ class ToastWidget(QLabel):
             f" border:2px solid {color}; border-radius:10px; padding:6px 16px;"
         )
         self.adjustSize()
-        # Position bottom-right of parent
         if self.parent():
             pw = self.parent().width()
             ph = self.parent().height()

@@ -14,8 +14,8 @@ from PyQt6.QtGui import QTextCursor, QColor
 from core.themes import T
 from core.server import start_server, stop_server, sync_git, send_server_cmd, backup_to_zip
 from core.settings import load_settings, update_setting, load_presets, save_preset, delete_preset
-from core.constants import CREATE_NO_WINDOW, PLAYIT_ADDR_RE, PLAYIT_CLAIM_RE, DEFAULT_SRV_PATH, DEFAULT_JAVA_PATH
-from .widgets import make_scroll, card, hline, lbl, btn, LogWidget, PerfStrip
+from core.constants import CREATE_NO_WINDOW, PLAYIT_ADDR_RE, PLAYIT_CLAIM_RE, DEFAULT_SRV_PATH, DEFAULT_JAVA_PATH, IS_WIN, IS_MAC
+from .widgets import make_scroll, card, hline, lbl, btn, LogWidget
 
 
 def _win():
@@ -26,10 +26,12 @@ def _win():
 # ── Control sub-tab ───────────────────────────────────────────────────────────
 class _ControlTab(QWidget):
     _world_size_signal = pyqtSignal(str)
+    _git_signal        = pyqtSignal(str, int)
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self._world_size_signal.connect(self._on_world_size)
+        self._git_signal.connect(self._on_git_status)
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0); root.setSpacing(0)
 
@@ -60,13 +62,96 @@ class _ControlTab(QWidget):
             c.layout().addWidget(dl)
             return c, b
 
-        sc, self.btn_start = _action_card("Start Server",
-            "Git pull then launch with Aikar JVM flags", "start", T["start"], start_server)
-        tc, self.btn_stop  = _action_card("Stop Server",
-            "Kill Java process (PID-specific) then push world to GitHub", "stop", T["stop"], stop_server)
-        uc, self.btn_sync  = _action_card("Sync & Upload",
-            "git add all, commit Manual Sync, push to GitHub", "sync", T["sync"], sync_git)
-        ll.addWidget(sc); ll.addWidget(tc); ll.addWidget(uc)
+        # ── Server controls card (start/stop combined) ──────────────────────
+        srv_card = card(); srv_card.layout().setSpacing(8)
+        srv_card.layout().addWidget(lbl("SERVER CONTROLS", header=True))
+        srv_card.layout().addWidget(hline())
+
+        start_row = QHBoxLayout(); start_row.setContentsMargins(0, 0, 0, 0)
+        self.btn_start = QPushButton("▶  Start Server")
+        self.btn_start.setObjectName("start"); self.btn_start.setFixedHeight(36)
+        self.btn_start.setStyleSheet(
+            f"QPushButton {{ background:{T['start']}; color:#000; border:none;"
+            f" border-radius:8px; font-weight:700; font-size:12px; }}"
+            f"QPushButton:hover {{ background:{T['start']}cc; }}")
+        self.btn_start.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_start.clicked.connect(
+            lambda: threading.Thread(target=start_server, daemon=True).start())
+
+        self.btn_stop = QPushButton("■  Stop Server")
+        self.btn_stop.setObjectName("stop"); self.btn_stop.setFixedHeight(36)
+        self.btn_stop.setStyleSheet(
+            f"QPushButton {{ background:{T['stop']}; color:#fff; border:none;"
+            f" border-radius:8px; font-weight:700; font-size:12px; }}"
+            f"QPushButton:hover {{ background:{T['stop']}cc; }}")
+        self.btn_stop.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_stop.clicked.connect(
+            lambda: threading.Thread(target=stop_server, daemon=True).start())
+
+        start_row.addWidget(self.btn_start, 1)
+        start_row.addSpacing(6)
+        start_row.addWidget(self.btn_stop, 1)
+        srv_card.layout().addLayout(start_row)
+        ll.addWidget(srv_card)
+
+        # ── Sync & Upload card (improved) ───────────────────────────────────
+        sync_card = card(); sync_card.layout().setSpacing(6)
+        sync_hdr = QHBoxLayout(); sync_hdr.setContentsMargins(0, 0, 0, 0)
+        sync_hdr.addWidget(lbl("SYNC & UPLOAD", header=True)); sync_hdr.addStretch()
+        self._git_status_lbl = QLabel("●  unknown")
+        self._git_status_lbl.setStyleSheet(
+            f"color:{T['muted']}; font-size:10px; background:transparent;")
+        sync_hdr.addWidget(self._git_status_lbl)
+        sync_card.layout().addLayout(sync_hdr)
+        sync_card.layout().addWidget(hline())
+
+        # Git remote display
+        self._git_remote_lbl = QLabel("")
+        self._git_remote_lbl.setStyleSheet(
+            f"color:{T['muted']}; font-size:9px; background:transparent;")
+        self._git_remote_lbl.setWordWrap(True)
+        sync_card.layout().addWidget(self._git_remote_lbl)
+        self._refresh_git_status()
+
+        sync_btn_row = QHBoxLayout(); sync_btn_row.setSpacing(4)
+        SYNC_ACTIONS = [
+            ("↑  Push",     "sync",    sync_git),
+            ("↓  Pull",     "handoff", lambda: threading.Thread(
+                target=lambda: __import__("core.server", fromlist=["run_cmd_log"])
+                    .run_cmd_log("git pull origin main",
+                                 load_settings().get("srv_path",
+                                 __import__("core.constants", fromlist=["DEFAULT_SRV_PATH"])
+                                 .DEFAULT_SRV_PATH)), daemon=True).start()),
+            ("⬛  Backup",   "start",   lambda: backup_to_zip("local")),
+            ("☁  GDrive",   "muted",   lambda: backup_to_zip("gdrive")),
+        ]
+        for label, obj, fn in SYNC_ACTIONS:
+            b = QPushButton(label); b.setFixedHeight(28)
+            b.setObjectName(obj if obj != "muted" else "")
+            if obj == "muted":
+                b.setStyleSheet(
+                    f"QPushButton {{ background:transparent; color:{T['muted']};"
+                    f" border:1px solid {T['border']}; border-radius:6px; font-size:10px; }}"
+                    f"QPushButton:hover {{ color:{T['text']}; border-color:{T['muted']}; }}")
+            b.setCursor(Qt.CursorShape.PointingHandCursor)
+            b.clicked.connect(lambda _, f=fn: threading.Thread(target=f, daemon=True).start())
+            sync_btn_row.addWidget(b)
+        sync_card.layout().addLayout(sync_btn_row)
+
+        # Auto-upload toggle row
+        au_row = QHBoxLayout(); au_row.setContentsMargins(0, 2, 0, 0)
+        au_lbl = QLabel("Auto-upload on stop")
+        au_lbl.setStyleSheet(f"color:{T['muted']}; font-size:10px; background:transparent;")
+        au_row.addWidget(au_lbl); au_row.addStretch()
+        from PyQt6.QtWidgets import QCheckBox as _QCB
+        self._auto_upload_cb = _QCB()
+        self._auto_upload_cb.setChecked(load_settings().get("upload_on_stop", False))
+        self._auto_upload_cb.stateChanged.connect(
+            lambda v: update_setting("upload_on_stop", bool(v)))
+        au_row.addWidget(self._auto_upload_cb)
+        sync_card.layout().addLayout(au_row)
+        ll.addWidget(sync_card)
+        self.btn_sync = self.btn_start  # compat alias
 
         # Online mode toggle card
         omc = card(); omc.layout().addWidget(lbl("SERVER MODE", header=True)); omc.layout().addWidget(hline())
@@ -170,10 +255,6 @@ class _ControlTab(QWidget):
         clear_b.clicked.connect(self.log_box.clear)
         rl.addWidget(lc, 3)
 
-        # Perf strip (4-column stats like reference)
-        self.perf_strip = PerfStrip()
-        rl.addWidget(self.perf_strip)
-
         # Chat & events
         cc = card(); cc.layout().setSpacing(6)
         ch = QHBoxLayout(); ch.setContentsMargins(0, 0, 0, 0)
@@ -188,37 +269,6 @@ class _ControlTab(QWidget):
         cc.layout().addWidget(self.chat_box)
         clear_c.clicked.connect(self.chat_box.clear)
         rl.addWidget(cc)
-
-        # Mini performance strip — compact 4-stat row below chat
-        mp = QFrame(); mp.setObjectName("card")
-        mpl = QHBoxLayout(mp); mpl.setContentsMargins(8, 5, 8, 5); mpl.setSpacing(0)
-        self._mini_perf_labels = {}
-        _MINI_STATS = [
-            ("tps",     "TPS"),
-            ("players", "Players"),
-            ("cpu_sys", "CPU"),
-            ("ram_pct", "RAM"),
-        ]
-        for i, (key, label) in enumerate(_MINI_STATS):
-            if i: mpl.addSpacing(1)  # divider spacing
-            cell = QWidget()
-            cl = QVBoxLayout(cell); cl.setContentsMargins(10, 2, 10, 2); cl.setSpacing(0)
-            kl = QLabel(label)
-            kl.setStyleSheet(f"color:{T['muted']}; font-size:9px; background:transparent;")
-            kl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            cl.addWidget(kl)
-            vl = QLabel("--")
-            vl.setStyleSheet(f"color:{T['sync']}; font-size:15px; font-weight:700; background:transparent;")
-            vl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            cl.addWidget(vl)
-            self._mini_perf_labels[key] = vl
-            mpl.addWidget(cell, 1)
-            if i < len(_MINI_STATS) - 1:
-                div = QFrame()
-                div.setFrameShape(QFrame.Shape.VLine)
-                div.setStyleSheet(f"color:{T['border']}; max-width:1px;")
-                mpl.addWidget(div)
-        rl.addWidget(mp)
 
         # Command input
         ci = card(); ci.layout().setContentsMargins(10, 6, 10, 6)
@@ -236,6 +286,39 @@ class _ControlTab(QWidget):
 
         self._chat_visible = True
         self._log_left = load_settings().get("log_left", False)
+
+    def _refresh_git_status(self):
+        def _work():
+            from core.constants import DEFAULT_SRV_PATH
+            path = load_settings().get("srv_path", DEFAULT_SRV_PATH)
+            try:
+                import subprocess
+                r = subprocess.run(["git", "remote", "get-url", "origin"],
+                                   capture_output=True, text=True, cwd=path, timeout=5)
+                remote = r.stdout.strip() if r.returncode == 0 else "no remote"
+                r2 = subprocess.run(["git", "status", "--short"],
+                                    capture_output=True, text=True, cwd=path, timeout=5)
+                dirty = len(r2.stdout.strip().splitlines()) if r2.returncode == 0 else 0
+                self._git_signal.emit(remote, dirty)
+            except Exception:
+                self._git_signal.emit("git not available", -1)
+        threading.Thread(target=_work, daemon=True).start()
+
+    def _on_git_status(self, remote: str, dirty: int):
+        short = remote[:42] + ("…" if len(remote) > 42 else "")
+        self._git_remote_lbl.setText(f"Remote: {short}")
+        if dirty < 0:
+            self._git_status_lbl.setText("● unavailable")
+            self._git_status_lbl.setStyleSheet(
+                f"color:{T['muted']}; font-size:10px; background:transparent;")
+        elif dirty == 0:
+            self._git_status_lbl.setText("● clean")
+            self._git_status_lbl.setStyleSheet(
+                f"color:{T['start']}; font-size:10px; background:transparent;")
+        else:
+            self._git_status_lbl.setText(f"● {dirty} changed")
+            self._git_status_lbl.setStyleSheet(
+                f"color:{T['handoff']}; font-size:10px; background:transparent;")
 
     def _refresh_online_mode(self):
         s = load_settings(); path = s.get("srv_path", DEFAULT_SRV_PATH)
@@ -347,21 +430,7 @@ class _ControlTab(QWidget):
             self.log_box.append_line(text, color)
 
     def update_perf(self):
-        self.perf_strip.update_perf()
-        from core.server import perf
-        _MINI_COLORS = {
-            "tps":     lambda v: T["start"] if float(v) >= 18 else T["handoff"] if float(v) >= 15 else T["stop"],
-            "cpu_sys": lambda v: T["start"] if float(str(v).replace("%","").split()[0]) < 60 else T["handoff"] if float(str(v).replace("%","").split()[0]) < 85 else T["stop"],
-            "ram_pct": lambda v: T["start"] if float(str(v).replace("%","").split()[0]) < 60 else T["handoff"] if float(str(v).replace("%","").split()[0]) < 85 else T["stop"],
-        }
-        for key, vl in self._mini_perf_labels.items():
-            val = perf.get(key, "--")
-            try:
-                color = _MINI_COLORS[key](val) if key in _MINI_COLORS and val != "--" else T["sync"]
-            except Exception:
-                color = T["muted"]
-            vl.setText(str(val))
-            vl.setStyleSheet(f"color:{color}; font-size:15px; font-weight:700; background:transparent;")
+        pass  # Perf strip now lives in MainWindow bottom bar
 
 
 # ── playit.gg sub-tab ─────────────────────────────────────────────────────────
@@ -371,13 +440,15 @@ _playit_log: list[str] = []
 
 
 class _PlayitTab(QWidget):
-    _log_signal = pyqtSignal(str)
-    _status_signal = pyqtSignal(str, str)  # text, color
+    _log_signal    = pyqtSignal(str)
+    _status_signal = pyqtSignal(str, str)
+    _dl_signal     = pyqtSignal(str, str)  # text, color
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self._log_signal.connect(self._append_on_ui)
         self._status_signal.connect(self._set_status_on_ui)
+        self._dl_signal.connect(self._set_dl_status)
         scroll, _, lay = make_scroll()
         root = QVBoxLayout(self); root.setContentsMargins(0, 0, 0, 0); root.addWidget(scroll)
 
@@ -466,15 +537,12 @@ class _PlayitTab(QWidget):
             update_setting("playit_path", p)
 
     def _auto_download(self):
-        import sys as _sys
-        IS_WIN = _sys.platform == "win32"
-        IS_MAC = _sys.platform == "darwin"
-        fname = "playit-windows.exe" if IS_WIN else ("playit-darwin" if IS_MAC else "playit-linux-amd64")
+        fname = ("playit-windows.exe" if IS_WIN else
+                 "playit-darwin" if IS_MAC else "playit-linux-amd64")
         dest_name = "playit.exe" if IS_WIN else "playit"
         from core.constants import _BASE_DIR
         dest = os.path.join(_BASE_DIR, dest_name)
-        self._dl_status.setText("Downloading...")
-        self._dl_status.setStyleSheet(f"color:{T['sync']}; background:transparent; font-size:11px;")
+        self._dl_signal.emit("Downloading...", T["sync"])
         def _work():
             import urllib.request
             url = f"https://github.com/playit-cloud/playit-agent/releases/latest/download/{fname}"
@@ -485,12 +553,14 @@ class _PlayitTab(QWidget):
                 if not IS_WIN: os.chmod(dest, 0o755)
                 self.path_edit.setText(dest)
                 update_setting("playit_path", dest)
-                self._dl_status.setText("Downloaded!")
-                self._dl_status.setStyleSheet(f"color:{T['start']}; background:transparent; font-size:11px;")
+                self._dl_signal.emit("Downloaded!", T["start"])
             except Exception as ex:
-                self._dl_status.setText(f"Failed: {ex}")
-                self._dl_status.setStyleSheet(f"color:{T['stop']}; background:transparent; font-size:11px;")
+                self._dl_signal.emit(f"Failed: {ex}", T["stop"])
         threading.Thread(target=_work, daemon=True).start()
+
+    def _set_dl_status(self, text: str, color: str):
+        self._dl_status.setText(text)
+        self._dl_status.setStyleSheet(f"color:{color}; background:transparent; font-size:11px;")
 
     def _stop(self):
         global _playit_proc
@@ -529,26 +599,44 @@ class _PlayitTab(QWidget):
         exe = self.path_edit.text().strip()
         update_setting("playit_path", exe)
         if not exe or not os.path.isfile(exe):
-            self._append("[MC CTRL] playit.exe not found. Set path in Setup above."); return
+            self._append("[MC CTRL] playit binary not found. Use Setup above."); return
         saved_key = self.key_edit.text().strip()
         if saved_key:
-            import sys
-            for toml_dir in [os.path.join(os.environ.get("APPDATA", ""), "playit"), os.path.dirname(exe)]:
-                if not toml_dir: continue
-                try:
-                    os.makedirs(toml_dir, exist_ok=True)
-                    tp = os.path.join(toml_dir, "playit.toml")
-                    lines = open(tp, encoding="utf-8", errors="ignore").readlines() if os.path.exists(tp) else []
-                    new_lines, found = [], False
-                    for tl in lines:
-                        if tl.strip().startswith("secret_key"):
-                            new_lines.append(f'secret_key = "{saved_key}"\n'); found = True
-                        else:
-                            new_lines.append(tl)
-                    if not found: new_lines.insert(0, f'secret_key = "{saved_key}"\n')
-                    open(tp, "w", encoding="utf-8").writelines(new_lines)
-                except Exception: pass
+            self._write_playit_toml(exe, saved_key)
         threading.Thread(target=self._run_playit, daemon=True).start()
+
+    def _write_playit_toml(self, exe: str, key: str):
+        """Write/update secret_key in playit.toml — cross-platform."""
+        import sys as _sys
+        if IS_WIN:
+            dirs = [os.path.join(os.environ.get("APPDATA", ""), "playit"),
+                    os.path.dirname(exe)]
+        elif IS_MAC:
+            dirs = [os.path.join(os.path.expanduser("~"), "Library", "Application Support", "playit"),
+                    os.path.dirname(exe)]
+        else:  # Linux / Docker
+            xdg = os.environ.get("XDG_CONFIG_HOME", os.path.join(os.path.expanduser("~"), ".config"))
+            dirs = [os.path.join(xdg, "playit"),
+                    os.path.dirname(exe),
+                    os.path.expanduser("~/.playit")]
+        for d in dirs:
+            if not d: continue
+            try:
+                os.makedirs(d, exist_ok=True)
+                tp = os.path.join(d, "playit.toml")
+                lines = open(tp, encoding="utf-8", errors="ignore").readlines() if os.path.exists(tp) else []
+                new_lines, found = [], False
+                for tl in lines:
+                    if tl.strip().startswith("secret_key"):
+                        new_lines.append(f'secret_key = "{key}"\n'); found = True
+                    else:
+                        new_lines.append(tl)
+                if not found: new_lines.insert(0, f'secret_key = "{key}"\n')
+                open(tp, "w", encoding="utf-8").writelines(new_lines)
+                self._append(f"[MC CTRL] Wrote secret key to {tp}")
+                return
+            except Exception as ex:
+                self._append(f"[MC CTRL] Could not write toml to {d}: {ex}")
 
     def _run_playit(self):
         global _playit_proc
@@ -556,11 +644,24 @@ class _PlayitTab(QWidget):
         _ansi = re.compile(r'\x1b(?:\[[0-9;]*[mABCDEFGHJKSTfhilmnprsuu]|\][^\x07]*\x07|[()][AB012]|[=>])')
         self._append("[MC CTRL] Agent starting...")
         self._status_signal.emit("Running", T["start"])
+
+        env = os.environ.copy()
+        key = self.key_edit.text().strip()
+        if key:
+            env["PLAYIT_SECRET"] = key  # env-var auth (works on all platforms incl. Docker)
+
+        popen_kw = dict(
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            stdin=subprocess.DEVNULL, text=False, bufsize=0, env=env,
+        )
+        if IS_WIN:
+            popen_kw["creationflags"] = CREATE_NO_WINDOW
+        else:
+            popen_kw["close_fds"]        = True
+            popen_kw["start_new_session"] = True
+
         try:
-            _playit_proc = subprocess.Popen(
-                [exe], stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                stdin=subprocess.DEVNULL, text=False, bufsize=0,
-                creationflags=CREATE_NO_WINDOW)
+            _playit_proc = subprocess.Popen([exe], **popen_kw)
             def _read(stream):
                 for raw in iter(stream.readline, b""):
                     if not raw: break
@@ -570,7 +671,7 @@ class _PlayitTab(QWidget):
                     m = PLAYIT_ADDR_RE.search(clean)
                     if m and _win(): _win()._signals.sig_set_addr.emit(m.group(1))
                     cm = PLAYIT_CLAIM_RE.search(clean)
-                    if cm and _win(): _win().toast(f"Claim URL: {cm.group(1)}", T["handoff"], 8000)
+                    if cm and _win(): _win().toast(f"Claim URL: {cm.group(1)}", T["handoff"], 10000)
             threading.Thread(target=_read, args=(_playit_proc.stdout,), daemon=True).start()
             threading.Thread(target=_read, args=(_playit_proc.stderr,), daemon=True).start()
             code = _playit_proc.wait()
