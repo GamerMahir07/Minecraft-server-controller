@@ -173,10 +173,16 @@ def find_java_proc():
 
 
 def perf_loop():
-    if not psutil:
-        return
     global perf_running
     perf_running = True
+    if not psutil:
+        # No psutil — still emit signal so bar shows "--" rather than stale values
+        while perf_running:
+            if signals:
+                try: signals.sig_perf.emit()
+                except Exception: pass
+            time.sleep(2)
+        return
     java_proc = None
     # Some Docker/Linux containers have no disk IO counters
     try:
@@ -396,7 +402,7 @@ def start_server():
 
 
 def stop_server():
-    global server_proc, server_stdin, server_pid, server_start_time, perf_running, server_ready
+    global server_proc, server_stdin, server_pid, server_start_time, server_ready
 
     _emit_status("Stopping…", _t("handoff"))
     _emit_log("-- Stop Server -------------------", "log")
@@ -406,9 +412,7 @@ def stop_server():
         except (BrokenPipeError, OSError): pass
         finally: server_stdin = None
 
-    perf_running = False   # signal perf_loop to exit after current sleep
-
-    # PID-specific kill
+    perf["tps"] = perf["latency"] = "--"
     if server_pid:
         try:
             if IS_WIN:

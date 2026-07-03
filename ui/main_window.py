@@ -348,7 +348,8 @@ class MainWindow(QMainWindow):
         self.dash_tab.log(text, cat)
 
     def _on_perf(self):
-        self.dash_tab.update_perf()
+        # Update the permanent bottom perf bar (called from both timer and sig_perf signal)
+        self._perf_bar.update_perf()
 
     def _on_status(self, text: str, color: str):
         self._sidebar.set_status(text, color)
@@ -366,11 +367,10 @@ class MainWindow(QMainWindow):
 
     def _tick_perf(self):
         from core.server import perf_running, perf_loop, server_proc
-        if server_proc is not None and server_proc.poll() is None:
-            if not perf_running:
-                threading.Thread(target=perf_loop, daemon=True).start()
+        # Always keep perf_loop running — shows system CPU/RAM even when server is off
+        if not perf_running:
+            threading.Thread(target=perf_loop, daemon=True).start()
         self._on_perf()
-        self._perf_bar.update_perf()
 
     def _open_theme_picker(self):
         from .theme_picker import ThemePickerDialog
